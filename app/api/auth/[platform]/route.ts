@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { redirect } from 'next/navigation';
 import { NextResponse } from 'next/server';
 
@@ -44,7 +45,18 @@ export async function GET(
   }
 
   const redirectUri = `${getBaseUrl()}/api/auth/${platform.toLowerCase()}/callback`;
-  const state = `${user.id}:${crypto.randomUUID()}`;
+
+  // PKCE for X (Twitter)
+  let state = `${user.id}:${crypto.randomUUID()}`;
+  const extraParams = { ...config.extraParams };
+
+  if (platform.toLowerCase() === 'x') {
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+    state = `${user.id}:${verifier}:${crypto.randomUUID()}`;
+    extraParams.code_challenge = challenge;
+    extraParams.code_challenge_method = 'S256';
+  }
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -52,7 +64,7 @@ export async function GET(
     response_type: 'code',
     scope: config.scope,
     state,
-    ...config.extraParams,
+    ...extraParams,
   });
 
   redirect(`${config.authorizeUrl}?${params}`);

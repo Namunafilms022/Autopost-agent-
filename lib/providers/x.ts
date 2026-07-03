@@ -3,16 +3,20 @@ import type { SocialProvider, ProviderToken, ProviderAccount } from './types';
 const TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
 
 export const xProvider: SocialProvider = {
-  async exchangeCode(code: string, redirectUri: string): Promise<ProviderToken> {
+  async exchangeCode(code: string, redirectUri: string, codeVerifier?: string): Promise<ProviderToken> {
     const clientId = process.env.X_CLIENT_ID!;
     const clientSecret = process.env.X_CLIENT_SECRET!;
     const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+    if (!codeVerifier) {
+      throw new Error('X OAuth requires code_verifier');
+    }
 
     const body = new URLSearchParams({
       code,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
-      code_verifier: 'challenge',
+      code_verifier: codeVerifier,
     });
 
     const res = await fetch(TOKEN_URL, {

@@ -10,7 +10,7 @@ export interface ProviderAccount {
 }
 
 export interface SocialProvider {
-  exchangeCode(code: string, redirectUri: string): Promise<ProviderToken>;
+  exchangeCode(code: string, redirectUri: string, codeVerifier?: string): Promise<ProviderToken>;
   getAccount(token: ProviderToken): Promise<ProviderAccount>;
   refreshToken(token: string): Promise<ProviderToken>;
   publish(): never;

@@ -43,12 +43,14 @@ export async function GET(
     redirect('/dashboard/social?error=No+authorization+code+received');
   }
 
-  let userId = state?.split(':')[0];
+  const stateParts = state?.split(':') || [];
+  const userId = stateParts[0];
+  const codeVerifier = platform.toLowerCase() === 'x' ? stateParts[1] : undefined;
 
   if (!userId) {
     const user = await getUserFromRequest(req);
     if (!user) redirect('/login');
-    userId = user.id;
+    userId = user!.id;
   }
 
   const provider = getProvider(name);
@@ -56,7 +58,7 @@ export async function GET(
 
   let tokens: { access_token: string; refresh_token?: string; expires_in?: number };
   try {
-    tokens = await provider!.exchangeCode(code, redirectUri);
+    tokens = await provider!.exchangeCode(code, redirectUri, codeVerifier);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown';
     redirect(`/dashboard/social?error=${encodeURIComponent(name + ': ' + msg)}`);

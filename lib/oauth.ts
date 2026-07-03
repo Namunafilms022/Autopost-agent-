@@ -39,7 +39,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     clientIdEnv: 'X_CLIENT_ID',
     clientSecretEnv: 'X_CLIENT_SECRET',
     scope: 'tweet.read tweet.write users.read',
-    extraParams: { code_challenge_method: 'S256', code_challenge: 'challenge' },
+    extraParams: {},
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: data.refresh_token as string | undefined,
