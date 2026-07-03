@@ -1,9 +1,9 @@
 'use client';
 
 import {
-  CheckCircle2, AlertCircle, Link2, Unlink, ExternalLink, Copy, Check,
+  CheckCircle2, AlertCircle, Link2, Unlink, RefreshCw, Clock, ExternalLink,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -19,66 +19,116 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { supabase } from '@/lib/supabase';
 import {
-  getSocialAccounts, connectSocialAccount, disconnectSocialAccount, deleteSocialAccount,
+  getSocialAccounts, connectSocialAccount, disconnectSocialAccount,
 } from '@/services/social';
 import type { SocialAccount } from '@/types/social';
-import { SOCIAL_PLATFORMS, PLATFORM_OAUTH_URLS } from '@/types/social';
+import { SOCIAL_PLATFORMS } from '@/types/social';
 
 const PLATFORM_LOGOS: Record<string, string> = {
   Instagram: '📷',
   Facebook: '👍',
   LinkedIn: '💼',
   X: '🐦',
-  Threads: '🧵',
+  TikTok: '🎵',
 };
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
 
 export default function SocialAccountsPage() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadedRef = useRef(false);
 
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [connectPlatform, setConnectPlatform] = useState<string>('');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualPlatform, setManualPlatform] = useState('');
   const [accountName, setAccountName] = useState('');
   const [accountId, setAccountId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const [disconnectId, setDisconnectId] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const loadAccounts = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await getSocialAccounts();
+      setAccounts(data);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load social accounts';
+      setLoadError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
-    getSocialAccounts()
-      .then(setAccounts)
-      .catch(() => toast.error('Failed to load social accounts'))
-      .finally(() => setLoading(false));
-  }, []);
+    loadAccounts();
 
-  const handleConnect = async () => {
-    if (!connectPlatform || !accountName.trim() || !accessToken.trim()) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connected') === 'true') {
+      toast.success('Account connected successfully');
+      window.history.replaceState({}, '', '/dashboard/social');
+    }
+    if (params.get('error')) {
+      toast.error(`Connection failed: ${params.get('error')}`);
+      window.history.replaceState({}, '', '/dashboard/social');
+    }
+  }, [loadAccounts]);
+
+  const handleOAuthConnect = async (platform: string) => {
+    const pf = SOCIAL_PLATFORMS.find(p => p.name === platform);
+    if (pf?.disabled) {
+      toast.error(`${platform} is currently unavailable`);
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    window.location.href = `/api/auth/${platform.toLowerCase()}${token ? `?token=${token}` : ''}`;
+  };
+
+  const handleManualConnect = async () => {
+    if (!manualPlatform || !accountName.trim() || !accessToken.trim()) {
       toast.error('Platform, account name, and token are required');
       return;
     }
     setSaving(true);
     try {
       const result = await connectSocialAccount({
-        platform: connectPlatform as SocialAccount['platform'],
+        platform: manualPlatform as SocialAccount['platform'],
         account_name: accountName.trim(),
         account_id: accountId.trim() || accountName.trim(),
         access_token: accessToken.trim(),
         refresh_token: refreshToken.trim() || undefined,
       });
       setAccounts((prev) => {
-        const filtered = prev.filter((a) => a.platform !== connectPlatform);
+        const filtered = prev.filter((a) => a.platform !== manualPlatform);
         return [...filtered, result];
       });
-      toast.success(`${connectPlatform} connected`);
-      setConnectOpen(false);
-      resetForm();
+      toast.success(`${manualPlatform} connected`);
+      setManualOpen(false);
+      setManualPlatform('');
+      setAccountName('');
+      setAccountId('');
+      setAccessToken('');
+      setRefreshToken('');
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to connect');
     } finally {
@@ -88,6 +138,7 @@ export default function SocialAccountsPage() {
 
   const handleDisconnect = async () => {
     if (!disconnectId) return;
+    setDisconnecting(true);
     const account = accounts.find((a) => a.id === disconnectId);
     try {
       await disconnectSocialAccount(disconnectId);
@@ -96,178 +147,191 @@ export default function SocialAccountsPage() {
     } catch {
       toast.error('Failed to disconnect');
     } finally {
+      setDisconnecting(false);
       setDisconnectId(null);
     }
   };
 
-  const resetForm = () => {
-    setConnectPlatform('');
-    setAccountName('');
-    setAccountId('');
-    setAccessToken('');
-    setRefreshToken('');
+  const openManual = (platform: string) => {
+    setManualPlatform(platform);
+    setManualOpen(true);
   };
-
-  const openConnect = (platform: string) => {
-    setConnectPlatform(platform);
-    setConnectOpen(true);
-  };
-
-  const copyOAuthUrl = async (url: string) => {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const connectedPlatforms = accounts
-    .filter((a) => a.status === 'connected')
-    .map((a) => a.platform);
-
-  if (loading) {
-    return <p className="text-muted-foreground">Loading...</p>;
-  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Social Accounts</h1>
-        <p className="text-muted-foreground">Connect your social media accounts for posting.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Social Accounts</h1>
+          <p className="text-muted-foreground">Connect your social media accounts for posting.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadAccounts} disabled={loading}>
+          <RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
-      {/* Platform Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {SOCIAL_PLATFORMS.map((pf) => {
-          const account = accounts.find(
-            (a) => a.platform === pf.name && a.status === 'connected',
-          );
-          const isConnected = !!account;
-          return (
-            <Card key={pf.name} className={isConnected ? 'border-green-500/50' : ''}>
-              <CardContent className="flex flex-col items-center gap-3 pt-6">
-                <div className={`flex size-12 items-center justify-center rounded-full ${pf.bg}`}>
-                  <span className="text-xl">{PLATFORM_LOGOS[pf.name]}</span>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">{pf.name}</p>
-                  {isConnected ? (
-                    <div className="mt-1 space-y-1">
-                      <Badge variant="outline" className="border-green-500 text-green-500">
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                        {account.account_name}
-                      </Badge>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Not connected</p>
-                  )}
-                </div>
-                {isConnected ? (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => openConnect(pf.name)}>
-                      Reconnect
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDisconnectId(account.id)}
-                    >
-                      <Unlink className="mr-1 h-3.5 w-3.5" />
-                      Disconnect
-                    </Button>
-                  </div>
-                ) : (
-                  <Button size="sm" onClick={() => openConnect(pf.name)}>
-                    <Link2 className="mr-1 h-3.5 w-3.5" />
-                    Connect
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Connected Accounts Summary */}
-      {accounts.filter((a) => a.status === 'connected').length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Connected Accounts</CardTitle>
-            <CardDescription>Manage your active connections.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {accounts
-                .filter((a) => a.status === 'connected')
-                .map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{PLATFORM_LOGOS[a.platform]}</span>
-                      <div>
-                        <p className="text-sm font-medium">{a.account_name}</p>
-                        <p className="text-xs text-muted-foreground">{a.platform}</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="border-green-500 text-green-500">
-                      <CheckCircle2 className="mr-1 h-3 w-3" />
-                      Connected
-                    </Badge>
-                  </div>
-                ))}
+      {loadError && !loading && (
+        <Card className="border-destructive/50">
+          <CardContent className="flex items-center gap-3 pt-6">
+            <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-destructive">Failed to load accounts</p>
+              <p className="text-xs text-muted-foreground">{loadError}</p>
             </div>
+            <Button variant="outline" size="sm" onClick={loadAccounts}>
+              Retry
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Connect Dialog */}
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {SOCIAL_PLATFORMS.map((pf) => (
+            <Card key={pf.name}>
+              <CardContent className="flex flex-col items-center gap-3 pt-6">
+                <div className="h-12 w-12 animate-pulse rounded-full bg-muted" />
+                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+                <div className="h-8 w-24 animate-pulse rounded bg-muted" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {SOCIAL_PLATFORMS.map((pf) => {
+              const account = accounts.find(
+                (a) => a.platform === pf.name && a.status === 'connected',
+              );
+              const isConnected = !!account;
+              const isDisabled = pf.disabled;
+              return (
+                <Card key={pf.name} className={`${isConnected ? 'border-green-500/50' : ''} ${isDisabled ? 'opacity-50' : ''}`}>
+                  <CardContent className="flex flex-col items-center gap-3 pt-6">
+                    <div className={`flex size-12 items-center justify-center rounded-full ${pf.bg}`}>
+                      <span className="text-xl">{PLATFORM_LOGOS[pf.name]}</span>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold">{pf.name}</p>
+                      {isDisabled ? (
+                        <p className="text-xs text-muted-foreground">Coming soon</p>
+                      ) : isConnected ? (
+                        <div className="mt-1 space-y-1">
+                          <Badge variant="outline" className="border-green-500 text-green-500">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            {account.account_name}
+                          </Badge>
+                          {account.connected_at && (
+                            <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {timeAgo(account.connected_at)}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not connected</p>
+                      )}
+                    </div>
+                    {isDisabled ? null : isConnected ? (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleOAuthConnect(pf.name)}>
+                          Reconnect
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDisconnectId(account.id)}
+                        >
+                          <Unlink className="mr-1 h-3.5 w-3.5" />
+                          Disconnect
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <Button size="sm" onClick={() => handleOAuthConnect(pf.name)}>
+                          <Link2 className="mr-1 h-3.5 w-3.5" />
+                          Connect
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => openManual(pf.name)}>
+                          <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                          Manual
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {accounts.filter((a) => a.status === 'connected').length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Connected Accounts</CardTitle>
+                <CardDescription>Manage your active connections.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {accounts
+                    .filter((a) => a.status === 'connected')
+                    .map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between rounded-lg border p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">{PLATFORM_LOGOS[a.platform]}</span>
+                          <div>
+                            <p className="text-sm font-medium">{a.account_name}</p>
+                            <p className="text-xs text-muted-foreground">{a.platform}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {a.connected_at && (
+                            <span className="text-xs text-muted-foreground">
+                              <Clock className="mr-1 inline h-3 w-3" />
+                              {timeAgo(a.connected_at)}
+                            </span>
+                          )}
+                          <Badge variant="outline" className="border-green-500 text-green-500">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            Connected
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Manual Connect Dialog */}
       <Dialog
-        open={connectOpen}
+        open={manualOpen}
         onOpenChange={(o) => {
-          if (!o) resetForm();
-          setConnectOpen(o);
+          if (!o) {
+            setManualPlatform('');
+            setAccountName('');
+            setAccountId('');
+            setAccessToken('');
+            setRefreshToken('');
+          }
+          setManualOpen(o);
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Connect {connectPlatform}</DialogTitle>
+            <DialogTitle>Connect {manualPlatform} (Manual)</DialogTitle>
             <DialogDescription>
-              Enter your {connectPlatform} API credentials or use OAuth.
+              Paste your access token, or use OAuth for automatic setup.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* OAuth URL */}
-            {connectPlatform && PLATFORM_OAUTH_URLS[connectPlatform] && (
-              <div className="rounded-lg border p-3">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                  OAuth Authorization URL
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs">
-                    {PLATFORM_OAUTH_URLS[connectPlatform]}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => copyOAuthUrl(PLATFORM_OAUTH_URLS[connectPlatform])}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                </div>
-                <div className="mt-2">
-                  <a
-                    href={PLATFORM_OAUTH_URLS[connectPlatform]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Open OAuth page
-                  </a>
-                </div>
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="accName">Account Name</Label>
               <Input
@@ -308,10 +372,10 @@ export default function SocialAccountsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setConnectOpen(false); resetForm(); }}>
+            <Button variant="outline" onClick={() => setManualOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConnect} disabled={saving}>
+            <Button onClick={handleManualConnect} disabled={saving}>
               {saving ? 'Connecting...' : 'Connect'}
             </Button>
           </DialogFooter>
@@ -331,9 +395,9 @@ export default function SocialAccountsPage() {
             <Button variant="outline" onClick={() => setDisconnectId(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDisconnect}>
+            <Button variant="destructive" onClick={handleDisconnect} disabled={disconnecting}>
               <Unlink className="mr-2 h-4 w-4" />
-              Disconnect
+              {disconnecting ? 'Disconnecting...' : 'Disconnect'}
             </Button>
           </DialogFooter>
         </DialogContent>

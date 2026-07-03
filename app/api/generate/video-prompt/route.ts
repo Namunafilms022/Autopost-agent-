@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemini-2.0-flash-001';
+import { callTextAI } from '@/lib/ai-config';
 
 export async function POST(req: Request) {
   try {
@@ -11,9 +10,6 @@ export async function POST(req: Request) {
     if (!topic?.trim() && !caption?.trim()) {
       return NextResponse.json({ error: 'Topic or caption is required' }, { status: 400 });
     }
-
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
     const prompt = `You are a video content strategist. Create a detailed video production prompt.
 
@@ -35,28 +31,10 @@ Requirements:
 - Match the tone of the caption/topic.
 - Suggest realistic, achievable video concepts.`;
 
-    const res = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8,
-        max_tokens: 1024,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorBody = await res.text().catch(() => '');
-      throw new Error(`OpenRouter API error (${res.status}): ${errorBody}`);
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response from AI');
+    const content = await callTextAI(
+      [{ role: 'user', content: prompt }],
+      { maxTokens: 1024, temperature: 0.8 },
+    );
 
     const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const parsed = JSON.parse(cleaned);

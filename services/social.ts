@@ -12,15 +12,20 @@ export async function getSocialAccounts(): Promise<SocialAccount[]> {
 }
 
 export async function connectSocialAccount(input: SocialAccountInput): Promise<SocialAccount> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
   const { data, error } = await supabase
     .from('social_accounts')
     .upsert({
+      user_id: user.id,
       platform: input.platform,
       account_name: input.account_name,
       account_id: input.account_id,
       access_token: input.access_token,
       refresh_token: input.refresh_token ?? null,
       token_expires_at: input.token_expires_at ?? null,
+      connected_at: new Date().toISOString(),
       status: 'connected',
     })
     .select()

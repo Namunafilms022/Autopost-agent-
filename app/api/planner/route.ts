@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemini-2.0-flash-001';
+import { callTextAI } from '@/lib/ai-config';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { industry, brand } = body;
-
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
     const prompt = `You are a social media content strategist. Create a 30-day content calendar.
 
@@ -42,28 +38,10 @@ Requirements:
 - Make topics specific and actionable, not generic.
 - Tailor everything to the ${industry ?? 'general'} industry.`;
 
-    const res = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.8,
-        max_tokens: 8192,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorBody = await res.text().catch(() => '');
-      throw new Error(`OpenRouter API error (${res.status}): ${errorBody}`);
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response from AI');
+    const content = await callTextAI(
+      [{ role: 'user', content: prompt }],
+      { maxTokens: 8192, temperature: 0.8 },
+    );
 
     const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const parsed = JSON.parse(cleaned);

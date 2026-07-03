@@ -27,9 +27,13 @@ export async function getBrand(id: string): Promise<Brand | null> {
 export async function createBrand(
   brand: Omit<Brand, 'id' | 'user_id' | 'created_at' | 'updated_at'>,
 ): Promise<Brand> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw new Error('Auth error: ' + userError.message);
+  if (!user) throw new Error('Not authenticated');
+
   const { data, error } = await supabase
     .from('brands')
-    .insert(brand)
+    .insert({ ...brand, user_id: user.id })
     .select()
     .single();
 

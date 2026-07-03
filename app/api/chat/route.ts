@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 
+import { callTextAI } from '@/lib/ai-config';
 import { fetchProfileByToken } from '@/services/memory';
 import { buildProfileContext } from '@/types/memory';
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemini-2.0-flash-001';
 
 function buildSystemPrompt(profileContext: string): string {
   return `You are "Ghost", an AI social media content assistant. The user gives you a vague prompt like "I need an Instagram reel about AI". Your job is to:
@@ -47,34 +45,13 @@ export async function POST(req: Request) {
     const profileContext = buildProfileContext(profile);
     const systemPrompt = buildSystemPrompt(profileContext);
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
-
-    const res = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message },
-        ],
-        temperature: 0.8,
-        max_tokens: 2048,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorBody = await res.text().catch(() => '');
-      throw new Error(`OpenRouter API error (${res.status}): ${errorBody}`);
-    }
-
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response from AI');
+    const content = await callTextAI(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+      { maxTokens: 2048, temperature: 0.8 },
+    );
 
     const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const parsed = JSON.parse(cleaned);

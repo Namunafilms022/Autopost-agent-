@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
 
+import { callTextAI } from '@/lib/ai-config';
 import { PLATFORMS, getPlatform } from '@/lib/platforms';
 import { fetchProfileByToken } from '@/services/memory';
 import { buildProfileContext } from '@/types/memory';
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemini-2.0-flash-001';
 
 function buildQuickPrompt(platformName: string, topic: string, style: string, profileContext: string) {
   const platform = getPlatform(platformName) ?? PLATFORMS[0];
@@ -34,55 +32,26 @@ Generate the following three items in JSON format (no markdown, no code blocks, 
 Respond with ONLY the JSON object. No other text.`;
 }
 
-async function callOpenRouter(prompt: string, platformName: string, retries = 2) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
+async function callAI(prompt: string, platformName: string) {
   const platform = getPlatform(platformName) ?? PLATFORMS[0];
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.8,
-          max_tokens: 1024,
-        }),
-      });
+  const content = await callTextAI(
+    [{ role: 'user', content: prompt }],
+    { maxTokens: 1024, temperature: 0.8 },
+  );
 
-      if (!res.ok) {
-        const errorBody = await res.text().catch(() => '');
-        throw new Error(`OpenRouter API error (${res.status}): ${errorBody}`);
-      }
+  const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const parsed = JSON.parse(cleaned);
 
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (!content) throw new Error('Empty response from AI');
-
-      const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-
-      if (!parsed.caption || !parsed.hashtags || !parsed.imagePrompt) {
-        throw new Error('Missing required fields in AI response');
-      }
-
-      return {
-        caption: parsed.caption.slice(0, platform.captionLimit),
-        hashtags: parsed.hashtags,
-        imagePrompt: parsed.imagePrompt,
-      };
-    } catch (err) {
-      if (attempt === retries) throw err;
-      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-    }
+  if (!parsed.caption || !parsed.hashtags || !parsed.imagePrompt) {
+    throw new Error('Missing required fields in AI response');
   }
 
-  throw new Error('Failed to generate content');
+  return {
+    caption: parsed.caption.slice(0, platform.captionLimit),
+    hashtags: parsed.hashtags,
+    imagePrompt: parsed.imagePrompt,
+  };
 }
 
 export async function POST(req: Request) {
@@ -98,7 +67,7 @@ export async function POST(req: Request) {
     const profileContext = buildProfileContext(profile);
 
     const prompt = buildQuickPrompt(platform, topic, style ?? 'Casual', profileContext);
-    const result = await callOpenRouter(prompt, platform);
+    const result = await callAI(prompt, platform);
 
     return NextResponse.json(result);
   } catch (err: unknown) {

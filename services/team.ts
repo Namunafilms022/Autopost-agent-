@@ -8,7 +8,10 @@ export async function getUserTeams(): Promise<TeamWithMemberCount[]> {
     .from('team_members')
     .select('team_id, role, teams!inner(*)');
 
-  if (mErr) throw mErr;
+  if (mErr) {
+    console.error('getUserTeams error (teams table may not exist):', mErr);
+    return [];
+  }
 
   const teams = await Promise.all(
     (memberships ?? []).map(async (m: Record<string, unknown>) => {

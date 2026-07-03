@@ -27,8 +27,8 @@ export default function NewBrandPage() {
 
       toast.success('Brand created');
       router.push('/dashboard/brands');
-    } catch {
-      toast.error('Failed to create brand');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create brand');
     } finally {
       setIsSubmitting(false);
     }
