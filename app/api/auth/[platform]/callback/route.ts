@@ -44,7 +44,7 @@ export async function GET(
   }
 
   const stateParts = state?.split(':') || [];
-  const userId = stateParts[0];
+  let userId = stateParts[0];
   const codeVerifier = platform.toLowerCase() === 'x' ? stateParts[1] : undefined;
 
   if (!userId) {
