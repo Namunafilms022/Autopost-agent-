@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 import { publishMedia } from '@/lib/instagram/publish';
+import { publishToLinkedin } from '@/lib/linkedin/publish';
+import { publishToX } from '@/lib/x/publish';
+import { publishToTikTok } from '@/lib/tiktok/publish';
+import { publishToYouTube } from '@/lib/youtube/publish';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -44,16 +48,88 @@ async function publishToInstagram(
   }
 }
 
-async function publishToOtherPlatform(
+async function getConnectedAccount(
+  userId: string,
   platform: string,
-  _caption: string,
-  _imageUrl: string,
-  _userId: string,
+): Promise<{ access_token: string; account_id: string } | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from('social_accounts')
+    .select('access_token, account_id')
+    .eq('user_id', userId)
+    .eq('platform', platform)
+    .eq('status', 'connected')
+    .single();
+  return data ?? null;
+}
+
+async function publishToLinkedinPlatform(
+  caption: string,
+  imageUrl: string,
+  userId: string,
 ): Promise<PublishResult> {
-  return {
-    success: false,
-    error_message: `Publishing to ${platform} is not yet implemented. Coming soon.`,
-  };
+  const account = await getConnectedAccount(userId, 'LinkedIn');
+  if (!account?.access_token || !account?.account_id) {
+    return { success: false, error_message: 'No connected LinkedIn account found' };
+  }
+  try {
+    const result = await publishToLinkedin(caption, imageUrl || null, account.access_token, account.account_id);
+    return { success: true, platform_response: result as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function publishToXPlatform(
+  caption: string,
+  imageUrl: string,
+  userId: string,
+): Promise<PublishResult> {
+  const account = await getConnectedAccount(userId, 'X');
+  if (!account?.access_token) {
+    return { success: false, error_message: 'No connected X account found' };
+  }
+  try {
+    const result = await publishToX(caption, imageUrl || null, account.access_token);
+    return { success: true, platform_response: result as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function publishToTikTokPlatform(
+  caption: string,
+  imageUrl: string,
+  userId: string,
+): Promise<PublishResult> {
+  const account = await getConnectedAccount(userId, 'TikTok');
+  if (!account?.access_token) {
+    return { success: false, error_message: 'No connected TikTok account found' };
+  }
+  try {
+    const result = await publishToTikTok(caption, imageUrl || null, account.access_token);
+    return { success: true, platform_response: result as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function publishToYouTubePlatform(
+  caption: string,
+  imageUrl: string,
+  userId: string,
+  title?: string | null,
+): Promise<PublishResult> {
+  const account = await getConnectedAccount(userId, 'YouTube');
+  if (!account?.access_token || !account?.account_id) {
+    return { success: false, error_message: 'No connected YouTube account found' };
+  }
+  try {
+    const result = await publishToYouTube(caption, imageUrl || null, account.access_token, account.account_id, title);
+    return { success: true, platform_response: result as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function publishQueueItem(
@@ -112,8 +188,20 @@ export async function publishQueueItem(
       case 'Instagram':
         result = await publishToInstagram(caption, imageUrl, item.user_id);
         break;
+      case 'LinkedIn':
+        result = await publishToLinkedinPlatform(caption, imageUrl, item.user_id);
+        break;
+      case 'X':
+        result = await publishToXPlatform(caption, imageUrl, item.user_id);
+        break;
+      case 'TikTok':
+        result = await publishToTikTokPlatform(caption, imageUrl, item.user_id);
+        break;
+      case 'YouTube':
+        result = await publishToYouTubePlatform(caption, imageUrl, item.user_id, item.title);
+        break;
       default:
-        result = await publishToOtherPlatform(platform, caption, imageUrl, item.user_id);
+        result = { success: false, error_message: `Unknown platform: ${platform}` };
     }
   } catch (err) {
     result = { success: false, error_message: err instanceof Error ? err.message : String(err) };
