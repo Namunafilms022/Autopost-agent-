@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import { xProvider } from '@/lib/providers/x';
+import { linkedinProvider } from '@/lib/providers/linkedin';
+import { tiktokProvider } from '@/lib/providers/tiktok';
+import { youtubeProvider } from '@/lib/providers/youtube';
 
 import { publishMedia } from '@/lib/instagram/publish';
 import { publishToLinkedin } from '@/lib/linkedin/publish';
@@ -57,14 +61,51 @@ async function getConnectedAccount(
   platform: string,
 ): Promise<{ access_token: string; account_id: string } | null> {
   const supabase = getServiceClient();
-  const { data } = await supabase
+  const { data: account } = await supabase
     .from('social_accounts')
-    .select('access_token, account_id')
+    .select('*')
     .eq('user_id', userId)
     .eq('platform', platform)
     .eq('status', 'connected')
     .single();
-  return data ?? null;
+
+  if (!account) return null;
+
+  // Auto-refresh if token is expired
+  if (
+    account.refresh_token &&
+    account.token_expires_at &&
+    new Date(account.token_expires_at) <= new Date()
+  ) {
+    try {
+      const providerMap: Record<string, { refreshToken: (token: string) => Promise<{ access_token: string; refresh_token?: string; expires_in?: number }> }> = {
+        X: xProvider,
+        LinkedIn: linkedinProvider,
+        TikTok: tiktokProvider,
+        YouTube: youtubeProvider,
+      };
+      const provider = providerMap[platform];
+      if (provider) {
+        const fresh = await provider.refreshToken(account.refresh_token);
+        const expiresAt = fresh.expires_in
+          ? new Date(Date.now() + fresh.expires_in * 1000).toISOString()
+          : null;
+        await supabase
+          .from('social_accounts')
+          .update({
+            access_token: fresh.access_token,
+            refresh_token: fresh.refresh_token ?? account.refresh_token,
+            token_expires_at: expiresAt,
+          })
+          .eq('id', account.id);
+        return { access_token: fresh.access_token, account_id: account.account_id };
+      }
+    } catch {
+      // Token refresh failed; return existing token (will likely 401)
+    }
+  }
+
+  return { access_token: account.access_token, account_id: account.account_id };
 }
 
 async function publishToLinkedinPlatform(
