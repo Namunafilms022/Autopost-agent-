@@ -11,7 +11,7 @@ export function extractJsonFromResponse(text: string): string {
   return text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 }
 
-export function tryParseJson<T>(text: string): { data?: T; error?: string } {
+export function tryParseJson<T>(text: string): { data: T; error?: undefined } | { data?: undefined; error: string } {
   try {
     return { data: JSON.parse(extractJsonFromResponse(text)) as T };
   } catch (err) {
