@@ -2,6 +2,7 @@
 
 import {
   Plus, Clock, CheckCircle2, XCircle, Trash2, Sparkles, RefreshCw, Send, Play, RotateCcw,
+  Activity, ToggleLeft, ToggleRight, ListOrdered, AlertCircle, BarChart3,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,15 +33,25 @@ import {
   getAutomationRules,
   createAutomationRule,
   updateAutomationRule,
-  toggleAutomationRule,
   deleteAutomationRule,
 } from '@/services/automation';
+import {
+  getAutomationState,
+  toggleAutomation,
+  upsertAutomationState,
+} from '@/services/automation-state';
+import { getPublishLogs } from '@/services/publish-log';
+import { getQueueItems } from '@/services/queue';
 import type { AutomationRule, AutomationRuleInput, AutomationTriggerType, AutomationActionType } from '@/types/automation';
+import type { AutomationState } from '@/types/automation-state';
+import type { PublishLog } from '@/types/publish-log';
+import type { QueueItem } from '@/types/queue';
 import {
   AUTOMATION_TEMPLATES,
   TRIGGER_LABELS,
   ACTION_LABELS,
 } from '@/types/automation';
+import { STATUS_LABELS, STATUS_COLORS } from '@/types/queue';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const PLATFORMS = ['Instagram', 'Facebook', 'LinkedIn', 'X', 'Threads'];
@@ -60,6 +71,14 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 export default function AutomationPage() {
+  // Stats state
+  const [automationState, setAutomationState] = useState<AutomationState | null>(null);
+  const [publishLogs, setPublishLogs] = useState<PublishLog[]>([]);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [workerRunning, setWorkerRunning] = useState(false);
+
+  // Rules state
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
@@ -82,10 +101,29 @@ export default function AutomationPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
+    loadStats();
     if (loadedRef.current) return;
     loadedRef.current = true;
     loadRules();
   }, []);
+
+  const loadStats = async () => {
+    setStatsLoading(true);
+    try {
+      const [state, logs, items] = await Promise.all([
+        getAutomationState().catch(() => null),
+        getPublishLogs(20).catch(() => [] as PublishLog[]),
+        getQueueItems().catch(() => [] as QueueItem[]),
+      ]);
+      setAutomationState(state);
+      setPublishLogs(logs);
+      setQueueItems(items);
+    } catch {
+      // silent
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   const loadRules = async () => {
     try {
@@ -229,15 +267,15 @@ export default function AutomationPage() {
       setDialogOpen(false);
       resetForm();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save rule');
+      toast.error(`Failed to save rule\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleToggle = async (rule: AutomationRule) => {
+  const handleToggleRule = async (rule: AutomationRule) => {
     try {
-      const updated = await toggleAutomationRule(rule.id, !rule.enabled);
+      const updated = await updateAutomationRule(rule.id, { enabled: !rule.enabled });
       setRules((prev) => prev.map((r) => (r.id === rule.id ? updated : r)));
       toast.success(updated.enabled ? 'Rule enabled' : 'Rule disabled');
     } catch {
@@ -284,23 +322,199 @@ export default function AutomationPage() {
     }
   };
 
+  const handleToggleAutomation = async () => {
+    if (!automationState) return;
+    try {
+      const updated = await toggleAutomation(!automationState.enabled);
+      setAutomationState(updated);
+      toast.success(updated.enabled ? 'Automation enabled' : 'Automation disabled');
+    } catch (err: unknown) {
+      toast.error(`Failed to toggle automation\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleRunWorker = async () => {
+    setWorkerRunning(true);
+    try {
+      const res = await fetch('/api/automation/worker', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      toast.success(`Worker ran: ${data.succeeded} published, ${data.failed} failed`);
+      loadStats();
+    } catch (err: unknown) {
+      toast.error(`Worker failed\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setWorkerRunning(false);
+    }
+  };
+
+  const postsApproved = queueItems.filter((i) => i.status === 'approved').length;
+  const postsFailed = queueItems.filter((i) => i.status === 'failed').length;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const postsToday = queueItems.filter(
+    (i) => i.status === 'posted' && i.published_at?.startsWith(todayStr),
+  ).length;
+
+  const statusBadge = (status: string) => {
+    const s = status as keyof typeof STATUS_COLORS;
+    return STATUS_COLORS[s] ?? 'bg-gray-500/10 text-gray-500 border-gray-500/30';
+  };
+
+  const statusLabel = (status: string) => {
+    const s = status as keyof typeof STATUS_LABELS;
+    return STATUS_LABELS[s] ?? status;
+  };
+
   if (loading) {
     return <p className="text-muted-foreground">Loading...</p>;
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Automation Rules</h1>
-          <p className="text-muted-foreground">Schedule and automate your content workflow.</p>
+          <h1 className="text-2xl font-bold">Automation</h1>
+          <p className="text-muted-foreground">Monitor and control automated publishing.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRunWorker} disabled={workerRunning}>
+            <Play className="mr-1 h-4 w-4" />
+            {workerRunning ? 'Running...' : 'Run Now'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={loadStats}>
+            <RefreshCw className="mr-1 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Status</CardTitle>
+            {automationState?.enabled
+              ? <Activity className="h-4 w-4 text-green-500" />
+              : <Activity className="h-4 w-4 text-muted-foreground" />
+            }
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-bold">
+                {automationState?.enabled ? 'Running' : 'Paused'}
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleAutomation}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {automationState?.enabled
+                  ? <ToggleRight className="h-6 w-6 text-primary" />
+                  : <ToggleLeft className="h-6 w-6" />
+                }
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {automationState?.last_run_at
+                ? `Last run: ${new Date(automationState.last_run_at).toLocaleString()}`
+                : 'No runs yet'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Published Today</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{postsToday}</div>
+            <p className="text-xs text-muted-foreground">
+              {automationState?.posts_published_today ?? 0} total today
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Waiting</CardTitle>
+            <ListOrdered className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{postsApproved}</div>
+            <p className="text-xs text-muted-foreground">Posts approved, awaiting schedule</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Failed</CardTitle>
+            <AlertCircle className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{postsFailed}</div>
+            <p className="text-xs text-muted-foreground">Posts with errors</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Publish Logs */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Publish Logs</CardTitle>
+          <CardDescription>Last 20 publish attempts.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">Loading...</p>
+          ) : publishLogs.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No publish logs yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {publishLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-2 w-2 rounded-full ${
+                      log.status === 'success' ? 'bg-green-500' :
+                      log.status === 'failed' ? 'bg-destructive' :
+                      'bg-yellow-500'
+                    }`} />
+                    <span className="font-medium capitalize">{log.platform}</span>
+                    <span className="text-muted-foreground">{new Date(log.started_at).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className={`capitalize ${
+                      log.status === 'success' ? 'text-green-500' :
+                      log.status === 'failed' ? 'text-destructive' : ''
+                    }`}>{log.status}</span>
+                    {log.duration_ms != null && (
+                      <span>{(log.duration_ms / 1000).toFixed(1)}s</span>
+                    )}
+                    {log.error_message && (
+                      <span className="max-w-xs truncate text-destructive" title={log.error_message}>
+                        {log.error_message}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Rules Section */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Automation Rules</h2>
+          <p className="text-sm text-muted-foreground">Schedule and automate your content workflow.</p>
         </div>
         <div className="flex gap-2">
-            <Button onClick={openNew}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Rule
-            </Button>
-          </div>
+          <Button onClick={openNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Rule
+          </Button>
+        </div>
       </div>
 
       {/* Templates */}
@@ -380,7 +594,7 @@ export default function AutomationPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Switch checked={rule.enabled} onCheckedChange={() => handleToggle(rule)} />
+                  <Switch checked={rule.enabled} onCheckedChange={() => handleToggleRule(rule)} />
                   <Button variant="ghost" size="icon" onClick={() => openEdit(rule)}>
                     <RefreshCw className="h-4 w-4" />
                   </Button>
@@ -416,7 +630,6 @@ export default function AutomationPage() {
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What does this rule do?" rows={2} />
             </div>
 
-            {/* Trigger */}
             <div>
               <Label>Trigger</Label>
               <div className="mt-1 flex gap-2">
@@ -463,7 +676,6 @@ export default function AutomationPage() {
               </div>
             )}
 
-            {/* Action */}
             <div>
               <Label>Action</Label>
               <div className="mt-1 flex flex-wrap gap-2">
@@ -485,7 +697,6 @@ export default function AutomationPage() {
               </div>
             </div>
 
-            {/* Action Config */}
             {actionType === 'generate' && (
               <div className="space-y-3">
                 <div className="space-y-2">

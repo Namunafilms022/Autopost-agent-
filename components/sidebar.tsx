@@ -2,147 +2,58 @@
 
 import {
   LayoutDashboard,
-  Building2,
-  Sparkles,
+  SquarePen,
   ListOrdered,
-  CheckCircle2,
-  Settings,
-  ImageIcon,
-  CalendarDays,
-  BarChart3,
-  Image,
-  Link2,
   Bot,
+  BarChart3,
+  Link2,
+  Settings,
+  Building2,
+  CalendarDays,
+  ImageIcon,
   ClipboardCheck,
+  CheckCircle2,
   Users,
-  TrendingUp,
-  Search,
-  WandSparkles,
-  ScrollText,
+  Sparkles,
   ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
-import { useMode } from '@/hooks/use-mode';
 import { cn } from '@/lib/utils';
 
-interface NavItem {
-  label: string;
-  href?: string;
-  icon: typeof LayoutDashboard;
-  quick: boolean;
-  getHref?: (mode: string) => string;
-}
+const mainNav = [
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'New Post', href: '/dashboard/new-post', icon: SquarePen },
+  { label: 'Queue', href: '/dashboard/queue', icon: ListOrdered },
+  { label: 'Automation', href: '/dashboard/automation', icon: Bot },
+  { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+  { label: 'Social Accounts', href: '/dashboard/social', icon: Link2 },
+  { label: 'Settings', href: '/dashboard/settings', icon: Settings },
+];
 
-interface NavSection {
-  title: string;
-  icon?: typeof LayoutDashboard;
-  items: NavItem[];
-}
-
-const sections: NavSection[] = [
-  {
-    title: 'Main Navigation',
-    items: [
-      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, quick: true },
-      { label: 'Create', href: '/dashboard/create', icon: WandSparkles, quick: true },
-      { label: 'Calendar', href: '/dashboard/calendar', icon: CalendarDays, quick: true },
-      { label: 'Queue', href: '/dashboard/queue', icon: ListOrdered, quick: true },
-      { label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3, quick: false },
-    ],
-  },
-  {
-    title: 'AI',
-    items: [
-      {
-        label: 'Generate', icon: Sparkles, quick: true,
-        getHref: (mode: string) => mode === 'quick' ? '/dashboard/quick' : '/dashboard/generate',
-      },
-      { label: 'Research', href: '/dashboard/research', icon: TrendingUp, quick: true },
-      { label: 'Competitors', href: '/dashboard/competitor', icon: Search, quick: true },
-      { label: 'Image Engine', href: '/dashboard/image-engine', icon: Image, quick: true },
-      { label: 'Script', href: '/dashboard/script', icon: ScrollText, quick: true },
-    ],
-  },
-  {
-    title: 'Content',
-    items: [
-      { label: 'Assets', href: '/dashboard/assets', icon: ImageIcon, quick: false },
-      { label: 'Approval', href: '/dashboard/approval', icon: ClipboardCheck, quick: true },
-      { label: 'Posted', href: '/dashboard/posted', icon: CheckCircle2, quick: true },
-    ],
-  },
+const secondarySections = [
   {
     title: 'Workspace',
     items: [
-      { label: 'Brands', href: '/dashboard/brands', icon: Building2, quick: false },
-      { label: 'Social', href: '/dashboard/social', icon: Link2, quick: true },
-      { label: 'Automation', href: '/dashboard/automation', icon: Bot, quick: true },
-      { label: 'Teams', href: '/dashboard/teams', icon: Users, quick: true },
-      { label: 'Settings', href: '/dashboard/settings', icon: Settings, quick: false },
+      { label: 'Brands', href: '/dashboard/brands', icon: Building2 },
+      { label: 'Calendar', href: '/dashboard/calendar', icon: CalendarDays },
+      { label: 'Assets', href: '/dashboard/assets', icon: ImageIcon },
+      { label: 'Approval', href: '/dashboard/approval', icon: ClipboardCheck },
+      { label: 'Posted', href: '/dashboard/posted', icon: CheckCircle2 },
+      { label: 'Teams', href: '/dashboard/teams', icon: Users },
     ],
   },
 ];
 
-function SidebarNavItem({ item, collapsed }: { item: NavItem; collapsed?: boolean }) {
-  const pathname = usePathname();
-  const { mode } = useMode();
-
-  const href = item.getHref ? item.getHref(mode) : item.href!;
-  const active = pathname === href;
-  const Icon = item.icon;
-
-  if (collapsed) {
-    return (
-      <Link
-        href={href}
-        title={item.label}
-        className={cn(
-          'flex items-center justify-center rounded-lg p-2 transition-colors',
-          active
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </Link>
-    );
-  }
-
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-        active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
-      )}
-    >
-      <Icon className="h-4 w-4 shrink-0" />
-      {item.label}
-    </Link>
-  );
-}
-
 export function Sidebar() {
-  const { mode } = useMode();
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    'AI': false,
-    'Content': false,
-    'Workspace': false,
-  });
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const toggleSection = (title: string) => {
-    setCollapsedSections((prev) => ({ ...prev, [title]: !prev[title] }));
+    setCollapsed((prev) => ({ ...prev, [title]: !prev[title] }));
   };
-
-  const filteredSections = sections.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => mode === 'pro' || item.quick),
-  })).filter((section) => section.items.length > 0);
 
   return (
     <aside className="hidden w-56 flex-col border-r bg-sidebar md:flex">
@@ -153,44 +64,72 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 overflow-y-auto p-3">
-        {filteredSections.map((section) => {
-          const isMain = section.title === 'Main Navigation';
-          const isCollapsed = collapsedSections[section.title] ?? false;
-          return (
-            <div key={section.title} className="mb-4">
-              {isMain ? (
-                <div className="space-y-1">
-                  {section.items.map((item) => (
-                    <SidebarNavItem key={item.label} item={item} />
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(section.title)}
-                    className="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent"
-                  >
-                    {section.title}
-                    <ChevronDown
-                      className={cn(
-                        'h-3.5 w-3.5 transition-transform',
-                        isCollapsed ? '' : 'rotate-180',
-                      )}
-                    />
-                  </button>
-                  {!isCollapsed && (
-                    <div className="space-y-1">
-                      {section.items.map((item) => (
-                        <SidebarNavItem key={item.label} item={item} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })}
+        <div className="space-y-1">
+          {mainNav.map((item) => {
+            const active = pathname === item.href;
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+        <div className="mt-6 space-y-4">
+          {secondarySections.map((section) => {
+            const isCollapsed = collapsed[section.title] ?? false;
+            return (
+              <div key={section.title}>
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.title)}
+                  className="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent"
+                >
+                  {section.title}
+                  <ChevronDown
+                    className={cn(
+                      'h-3.5 w-3.5 transition-transform',
+                      isCollapsed ? '' : 'rotate-180',
+                    )}
+                  />
+                </button>
+                {!isCollapsed && (
+                  <div className="space-y-1">
+                    {section.items.map((item) => {
+                      const active = pathname === item.href || pathname.startsWith(item.href + '/');
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.label}
+                          href={item.href}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                            active
+                              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                              : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+                          )}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </nav>
     </aside>
   );

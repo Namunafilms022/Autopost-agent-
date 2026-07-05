@@ -5,6 +5,7 @@ import {
   Trash2,
   FileText,
   SendHorizonal,
+  RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -90,10 +91,27 @@ export default function QueuePage() {
       await deleteQueueItem(deleteId);
       toast.success('Item deleted');
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
-    } catch {
-      toast.error('Failed to delete');
+    } catch (err: unknown) {
+      toast.error(`Failed to delete\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleteId(null);
+    }
+  };
+
+  const handleRetry = async (id: string) => {
+    try {
+      const res = await fetch('/api/queue/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueItemId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      toast.success(data.message || 'Post queued for retry');
+      const items = await getQueueItems();
+      setItems(items);
+    } catch (err: unknown) {
+      toast.error(`Failed to retry\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -102,8 +120,8 @@ export default function QueuePage() {
       const updated = await submitForApproval(id);
       setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
       toast.success('Submitted for approval');
-    } catch {
-      toast.error('Failed to submit');
+    } catch (err: unknown) {
+      toast.error(`Failed to submit\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -124,8 +142,8 @@ export default function QueuePage() {
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
       toast.success('Item updated');
       setEditItem(null);
-    } catch {
-      toast.error('Failed to update');
+    } catch (err: unknown) {
+      toast.error(`Failed to update\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
@@ -154,11 +172,11 @@ export default function QueuePage() {
             <div className="flex flex-col items-center gap-4 py-12">
               <p className="text-muted-foreground">No scheduled items yet.</p>
               <Link
-                href="/dashboard/generate"
-                className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted hover:text-foreground"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                Generate content first
+              href="/dashboard/new-post"
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted hover:text-foreground"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Create a new post
               </Link>
             </div>
           ) : (
@@ -220,6 +238,16 @@ export default function QueuePage() {
                                 title="Submit for approval"
                               >
                                 <SendHorizonal className="h-4 w-4" />
+                              </button>
+                            )}
+                            {item.status === 'failed' && (item.retry_count ?? 0) < 3 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRetry(item.id)}
+                                className="inline-flex size-8 items-center justify-center rounded-lg hover:bg-muted text-orange-500"
+                                title={`Retry (attempt ${(item.retry_count ?? 0) + 1}/3)`}
+                              >
+                                <RotateCcw className="h-4 w-4" />
                               </button>
                             )}
                             <button
@@ -304,6 +332,19 @@ export default function QueuePage() {
                 <div>
                   <span className="text-muted-foreground">Title:</span>
                   <p className="mt-1 font-medium">{viewItem.title}</p>
+                </div>
+              )}
+              {viewItem.error_message && (
+                <div>
+                  <span className="text-muted-foreground">Error:</span>
+                  <p className="mt-1 rounded-lg bg-destructive/10 p-2 text-sm text-destructive">
+                    {viewItem.error_message}
+                  </p>
+                  {viewItem.retry_count > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Retries: {viewItem.retry_count}/3
+                    </p>
+                  )}
                 </div>
               )}
             </div>

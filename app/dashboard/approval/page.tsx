@@ -93,8 +93,8 @@ export default function ApprovalPage() {
       setItems((prev) => prev.map((i) => (i.id === reviewItem.id ? updated : i)));
       toast.success('Approved');
       setReviewItem(null);
-    } catch {
-      toast.error('Failed to approve');
+    } catch (err: unknown) {
+      toast.error(`Failed to approve\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setActionLoading(false);
     }
@@ -108,8 +108,8 @@ export default function ApprovalPage() {
       setItems((prev) => prev.map((i) => (i.id === reviewItem.id ? updated : i)));
       toast.success('Rejected');
       setReviewItem(null);
-    } catch {
-      toast.error('Failed to reject');
+    } catch (err: unknown) {
+      toast.error(`Failed to reject\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setActionLoading(false);
     }
@@ -200,8 +200,8 @@ export default function ApprovalPage() {
                           const updated = await approveQueueItem(item.id);
                           setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
                           toast.success('Approved');
-                        } catch {
-                          toast.error('Failed to approve');
+                        } catch (err: unknown) {
+                          toast.error(`Failed to approve\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
                         }
                       }}
                     >
@@ -217,8 +217,8 @@ export default function ApprovalPage() {
                           const updated = await rejectQueueItem(item.id);
                           setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
                           toast.success('Rejected');
-                        } catch {
-                          toast.error('Failed to reject');
+                        } catch (err: unknown) {
+                          toast.error(`Failed to reject\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
                         }
                       }}
                     >

@@ -20,7 +20,7 @@ async function fetchBrand(brandId: string, token: string) {
 }
 
 function buildPrompt(
-  brand: Record<string, string | null>,
+  brand: Record<string, string | null> | null,
   platformName: string,
   contentType: string,
   topic: string,
@@ -30,9 +30,8 @@ function buildPrompt(
 ) {
   const platform = getPlatform(platformName) ?? PLATFORMS[0];
 
-  const base = `You are a professional social media content creator and copywriter specializing in ${platformName}.
-${profileContext}
-Generate social media content for the following brand:
+  const brandSection = brand
+    ? `Generate social media content for the following brand:
 
 **Brand:** ${brand.brand_name}
 **Industry:** ${brand.industry || 'N/A'}
@@ -41,7 +40,12 @@ Generate social media content for the following brand:
 **Brand Tone:** ${brand.brand_tone || 'N/A'}
 **Primary Color:** ${brand.primary_color}
 **Secondary Color:** ${brand.secondary_color}
-**Language:** ${brand.language || 'en'}
+**Language:** ${brand.language || 'en'}`
+    : `Generate engaging social media content without a specific brand context. Write in a general, universally appealing tone.`;
+
+  const base = `You are a professional social media content creator and copywriter specializing in ${platformName}.
+${profileContext}
+${brandSection}
 
 **Platform:** ${platformName}
 **Content Type:** ${contentType}
@@ -126,16 +130,18 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { brandId, platform, contentType, topic, goal, supabaseToken, contentSource, assetUrl } = body;
 
-    if (!brandId || !platform || !contentType || !topic) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!platform || !contentType || !topic) {
+      return NextResponse.json({ error: 'Missing required fields: platform, contentType, topic' }, { status: 400 });
     }
 
     const source: 'ai' | 'asset' = contentSource === 'asset' ? 'asset' : 'ai';
-
-    const brand = await fetchBrand(brandId, supabaseToken);
-
     const profile = await fetchProfileByToken(supabaseToken).catch(() => null);
     const profileContext = buildProfileContext(profile);
+
+    let brand;
+    if (brandId) {
+      brand = await fetchBrand(brandId, supabaseToken).catch(() => null);
+    }
 
     const prompt = buildPrompt(brand, platform, contentType, topic, goal ?? '', source, profileContext);
     const result = await callAI(prompt, source, platform);
