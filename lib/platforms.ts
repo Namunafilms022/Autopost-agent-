@@ -47,6 +47,22 @@ export const PLATFORMS: PlatformConfig[] = [
     formattingRules:
       'Casual and authentic. Conversational, informal tone. Use 1-3 hashtags. Feel free to be playful.',
   },
+  {
+    name: 'TikTok',
+    captionLimit: 2200,
+    hashtagLimit: 30,
+    description: 'Short-form video platform. Trendy, authentic.',
+    formattingRules:
+      'Trend-aware and authentic. Use hooks in first 3 seconds. Short, punchy captions. Include 3-5 relevant hashtags.',
+  },
+  {
+    name: 'YouTube',
+    captionLimit: 5000,
+    hashtagLimit: 15,
+    description: 'Long-form video platform. In-depth, educational.',
+    formattingRules:
+      'SEO-optimized titles. Start with a hook. Use timestamps for long videos. Include relevant hashtags in description.',
+  },
 ];
 
 export function getPlatform(name: string): PlatformConfig | undefined {

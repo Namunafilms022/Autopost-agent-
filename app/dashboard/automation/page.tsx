@@ -54,7 +54,7 @@ import {
 import { STATUS_LABELS, STATUS_COLORS } from '@/types/queue';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const PLATFORMS = ['Instagram', 'Facebook', 'LinkedIn', 'X', 'Threads'];
+const PLATFORMS = ['Instagram', 'Facebook', 'LinkedIn', 'X', 'Threads', 'TikTok', 'YouTube'];
 
 const ACTION_ICONS: Record<string, typeof Sparkles> = {
   generate: Sparkles,
