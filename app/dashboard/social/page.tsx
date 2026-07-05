@@ -50,6 +50,7 @@ export default function SocialAccountsPage() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const loadedRef = useRef(false);
 
   const [manualOpen, setManualOpen] = useState(false);
@@ -86,10 +87,13 @@ export default function SocialAccountsPage() {
     if (params.get('connected') === 'true') {
       toast.success('Account connected successfully');
       window.history.replaceState({}, '', '/dashboard/social');
+      loadAccounts();
     }
     if (params.get('error')) {
-      toast.error(`Connection failed: ${params.get('error')}`);
-      window.history.replaceState({}, '', '/dashboard/social');
+      const errMsg = `Connection failed: ${params.get('error')}`;
+      setOauthError(params.get('error')!);
+      toast.error(errMsg, { duration: 10000 });
+      console.error('[Social Page] Connection error:', params.get('error'));
     }
   }, [loadAccounts]);
 
@@ -183,6 +187,21 @@ export default function SocialAccountsPage() {
             </div>
             <Button variant="outline" size="sm" onClick={loadAccounts}>
               Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {oauthError && (
+        <Card className="border-destructive/50">
+          <CardContent className="flex items-center gap-3 pt-6">
+            <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-destructive">OAuth Connection Error</p>
+              <p className="text-xs text-muted-foreground">{oauthError}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setOauthError(null)}>
+              Dismiss
             </Button>
           </CardContent>
         </Card>
