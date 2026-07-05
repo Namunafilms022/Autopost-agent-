@@ -92,12 +92,17 @@ export async function approveQueueItem(id: string): Promise<QueueItem> {
     throw new Error(`Cannot approve: current status is "${itemData.status}", expected "pending_approval"`);
   }
 
+  const now = new Date().toISOString();
+  const scheduled = new Date(itemData.scheduled_time);
+  const updateScheduled = scheduled <= new Date() ? now : itemData.scheduled_time;
+
   const { error: updateError, data } = await supabase
     .from('queue_items')
     .update({
       status: 'approved',
+      scheduled_time: updateScheduled,
       reviewed_by: user.user?.id,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: now,
     })
     .eq('id', id)
     .select()
