@@ -27,6 +27,14 @@ interface ImagePromptResult {
   composition: string;
 }
 
+function normalizeField(obj: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
+
 async function callAI(prompt: string): Promise<ImagePromptResult> {
   const content = await callTextAI(
     [{ role: 'user', content: prompt }],
@@ -34,18 +42,22 @@ async function callAI(prompt: string): Promise<ImagePromptResult> {
   );
 
   const { data: parsed, error: parseError } = tryParseJson<any>(content);
-  if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
+  if (parseError) {
+    throw new Error(`Failed to parse AI response. The AI returned an unexpected format. Try rephrasing your topic.`);
+  }
 
-  if (!parsed.imagePrompt) {
-    throw new Error('Missing image prompt in AI response');
+  const imagePrompt = normalizeField(parsed, 'imagePrompt', 'image_prompt', 'ImagePrompt', 'image_prompt');
+
+  if (!imagePrompt) {
+    throw new Error('AI response missing image prompt. Try rephrasing your topic.');
   }
 
   return {
-    imagePrompt: parsed.imagePrompt,
-    style: parsed.style ?? '',
-    lighting: parsed.lighting ?? '',
-    camera: parsed.camera ?? '',
-    composition: parsed.composition ?? '',
+    imagePrompt,
+    style: normalizeField(parsed, 'style', 'Style') ?? '',
+    lighting: normalizeField(parsed, 'lighting', 'Lighting') ?? '',
+    camera: normalizeField(parsed, 'camera', 'Camera') ?? '',
+    composition: normalizeField(parsed, 'composition', 'Composition') ?? '',
   };
 }
 

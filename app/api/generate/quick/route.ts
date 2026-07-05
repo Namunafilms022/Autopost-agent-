@@ -33,6 +33,14 @@ Generate the following three items in JSON format (no markdown, no code blocks, 
 Respond with ONLY the JSON object. No other text.`;
 }
 
+function normalizeField(obj: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
+
 async function callAI(prompt: string, platformName: string) {
   const platform = getPlatform(platformName) ?? PLATFORMS[0];
 
@@ -42,16 +50,26 @@ async function callAI(prompt: string, platformName: string) {
   );
 
   const { data: parsed, error: parseError } = tryParseJson<any>(content);
-  if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
+  if (parseError) {
+    throw new Error(`Failed to parse AI response. The AI returned an unexpected format. Try rephrasing your topic.`);
+  }
 
-  if (!parsed.caption || !parsed.hashtags || !parsed.imagePrompt) {
-    throw new Error('Missing required fields in AI response');
+  const caption = normalizeField(parsed, 'caption', 'Caption');
+  const hashtags = normalizeField(parsed, 'hashtags', 'hashtags', 'Hashtags');
+  const imagePrompt = normalizeField(parsed, 'imagePrompt', 'image_prompt', 'ImagePrompt', 'image_prompt');
+
+  if (!caption || !hashtags || !imagePrompt) {
+    const missing: string[] = [];
+    if (!caption) missing.push('caption');
+    if (!hashtags) missing.push('hashtags');
+    if (!imagePrompt) missing.push('imagePrompt/image_prompt');
+    throw new Error(`AI response missing: ${missing.join(', ')}. Try rephrasing your topic.`);
   }
 
   return {
-    caption: parsed.caption.slice(0, platform.captionLimit),
-    hashtags: parsed.hashtags,
-    imagePrompt: parsed.imagePrompt,
+    caption: caption.slice(0, platform.captionLimit),
+    hashtags,
+    imagePrompt,
   };
 }
 

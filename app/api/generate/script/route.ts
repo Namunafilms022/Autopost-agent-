@@ -27,6 +27,14 @@ interface ScriptResult {
   sceneSuggestions: string[];
 }
 
+function normalizeField(obj: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
+
 async function callAI(prompt: string): Promise<ScriptResult> {
   const content = await callTextAI(
     [{ role: 'user', content: prompt }],
@@ -34,18 +42,35 @@ async function callAI(prompt: string): Promise<ScriptResult> {
   );
 
   const { data: parsed, error: parseError } = tryParseJson<any>(content);
-  if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
+  if (parseError) {
+    throw new Error(`Failed to parse AI response. The AI returned an unexpected format. Try rephrasing your topic.`);
+  }
 
-  if (!parsed.hook || !parsed.script || !parsed.cta) {
-    throw new Error('Missing required fields in AI response');
+  const hook = normalizeField(parsed, 'hook', 'Hook');
+  const script = normalizeField(parsed, 'script', 'Script');
+  const cta = normalizeField(parsed, 'cta', 'cta', 'Cta', 'CTA');
+  const estimatedDuration = normalizeField(parsed, 'estimatedDuration', 'estimated_duration', 'EstimatedDuration');
+
+  if (!hook || !script || !cta) {
+    const missing: string[] = [];
+    if (!hook) missing.push('hook');
+    if (!script) missing.push('script');
+    if (!cta) missing.push('cta');
+    throw new Error(`AI response missing: ${missing.join(', ')}. Try rephrasing your topic.`);
+  }
+
+  let sceneSuggestions: string[] = [];
+  const rawScenes = parsed.sceneSuggestions ?? parsed.scene_suggestions;
+  if (Array.isArray(rawScenes)) {
+    sceneSuggestions = rawScenes;
   }
 
   return {
-    hook: parsed.hook,
-    script: parsed.script,
-    cta: parsed.cta,
-    estimatedDuration: parsed.estimatedDuration ?? '30 sec',
-    sceneSuggestions: Array.isArray(parsed.sceneSuggestions) ? parsed.sceneSuggestions : [],
+    hook,
+    script,
+    cta,
+    estimatedDuration: estimatedDuration ?? '30 sec',
+    sceneSuggestions,
   };
 }
 
