@@ -24,8 +24,8 @@ export interface SocialAccountInput {
 }
 
 export const SOCIAL_PLATFORMS = [
-  { name: 'Instagram' as const, color: 'text-pink-500', bg: 'bg-pink-500/10', disabled: true },
-  { name: 'Facebook' as const, color: 'text-blue-600', bg: 'bg-blue-600/10', disabled: true },
+  { name: 'Instagram' as const, color: 'text-pink-500', bg: 'bg-pink-500/10', disabled: false },
+  { name: 'Facebook' as const, color: 'text-blue-600', bg: 'bg-blue-600/10', disabled: false },
   { name: 'LinkedIn' as const, color: 'text-blue-700', bg: 'bg-blue-700/10', disabled: false },
   { name: 'X' as const, color: 'text-foreground', bg: 'bg-muted', disabled: false },
   { name: 'TikTok' as const, color: 'text-foreground', bg: 'bg-muted', disabled: false },

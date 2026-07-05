@@ -101,7 +101,10 @@ export default function SocialAccountsPage() {
     }
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    window.location.href = `/api/auth/${platform.toLowerCase()}${token ? `?token=${token}` : ''}`;
+    const basePath = platform === 'Instagram'
+      ? `/api/auth/${platform.toLowerCase()}/login`
+      : `/api/auth/${platform.toLowerCase()}`;
+    window.location.href = `${basePath}${token ? `?token=${token}` : ''}`;
   };
 
   const handleManualConnect = async () => {
