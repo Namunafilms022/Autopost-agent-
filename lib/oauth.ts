@@ -51,7 +51,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
     clientIdEnv: 'TIKTOK_CLIENT_ID',
     clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
-    scope: 'user.info.basic,video.publish',
+    scope: 'user.info.basic,video.publish,video.upload',
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: data.refresh_token as string | undefined,

@@ -58,8 +58,10 @@ export async function GET(
     extraParams.code_challenge_method = 'S256';
   }
 
+  const clientParam = platform.toLowerCase() === 'tiktok' ? 'client_key' : 'client_id';
+
   const params = new URLSearchParams({
-    client_id: clientId,
+    [clientParam]: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: config.scope,
