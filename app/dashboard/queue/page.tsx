@@ -68,7 +68,22 @@ export default function QueuePage() {
 
   const [editItem, setEditItem] = useState<QueueItem | null>(null);
   const [editDate, setEditDate] = useState('');
+  const [editHour, setEditHour] = useState('12');
+  const [editMinute, setEditMinute] = useState('00');
+  const [editAmPm, setEditAmPm] = useState<'AM' | 'PM'>('PM');
   const [editStatus, setEditStatus] = useState<QueueStatus>('draft');
+
+  function buildEditISO(): string | null {
+    if (!editDate) return null;
+    let h = parseInt(editHour, 10);
+    if (isNaN(h) || h < 1 || h > 12) h = 12;
+    if (editAmPm === 'PM' && h !== 12) h += 12;
+    if (editAmPm === 'AM' && h === 12) h = 0;
+    const m = parseInt(editMinute, 10);
+    const date = new Date(editDate);
+    date.setHours(h, isNaN(m) ? 0 : m, 0, 0);
+    return date.toISOString();
+  }
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [viewItem, setViewItem] = useState<QueueItem | null>(null);
@@ -127,16 +142,22 @@ export default function QueuePage() {
 
   const openEdit = (item: QueueItem) => {
     setEditItem(item);
-    setEditDate(new Date(item.scheduled_time).toISOString().slice(0, 16));
+    const d = new Date(item.scheduled_time);
+    setEditDate(d.toISOString().slice(0, 10));
+    const h = d.getHours();
+    setEditHour(String(h === 0 ? 12 : h > 12 ? h - 12 : h).padStart(2, '0'));
+    setEditMinute(String(d.getMinutes()).padStart(2, '0'));
+    setEditAmPm(h >= 12 ? 'PM' : 'AM');
     setEditStatus(item.status);
   };
 
   const handleEdit = async () => {
-    if (!editItem || !editDate) return;
+    const iso = buildEditISO();
+    if (!editItem || !iso) return;
     setSaving(true);
     try {
       const updated = await updateQueueItem(editItem.id, {
-        scheduled_time: new Date(editDate).toISOString(),
+        scheduled_time: iso,
         status: editStatus,
       });
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
@@ -361,13 +382,42 @@ export default function QueuePage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="editDate">Date & Time</Label>
-              <Input
-                id="editDate"
-                type="datetime-local"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-              />
+              <Label>Date & Time</Label>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-auto"
+                />
+                <select
+                  value={editHour}
+                  onChange={(e) => setEditHour(e.target.value)}
+                  className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                    <option key={h} value={String(h).padStart(2, '0')}>{h}</option>
+                  ))}
+                </select>
+                <span className="flex items-center text-sm text-muted-foreground">:</span>
+                <select
+                  value={editMinute}
+                  onChange={(e) => setEditMinute(e.target.value)}
+                  className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {Array.from({ length: 60 }, (_, i) => (
+                    <option key={i} value={String(i).padStart(2, '0')}>{String(i).padStart(2, '0')}</option>
+                  ))}
+                </select>
+                <select
+                  value={editAmPm}
+                  onChange={(e) => setEditAmPm(e.target.value as 'AM' | 'PM')}
+                  className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="editStatus">Status</Label>

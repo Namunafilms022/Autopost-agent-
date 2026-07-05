@@ -89,7 +89,22 @@ export default function NewPostPage() {
 
   // Schedule
   const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleHour, setScheduleHour] = useState('12');
+  const [scheduleMinute, setScheduleMinute] = useState('00');
+  const [scheduleAmPm, setScheduleAmPm] = useState<'AM' | 'PM'>('PM');
   const [scheduling, setScheduling] = useState(false);
+
+  function buildScheduleISO(): string | null {
+    if (!scheduleDate) return null;
+    let h = parseInt(scheduleHour, 10);
+    if (isNaN(h) || h < 1 || h > 12) h = 12;
+    if (scheduleAmPm === 'PM' && h !== 12) h += 12;
+    if (scheduleAmPm === 'AM' && h === 12) h = 0;
+    const m = parseInt(scheduleMinute, 10);
+    const date = new Date(scheduleDate);
+    date.setHours(h, isNaN(m) ? 0 : m, 0, 0);
+    return date.toISOString();
+  }
 
   // Queue items
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
@@ -258,7 +273,8 @@ export default function NewPostPage() {
       toast.error('Platform is required');
       return;
     }
-    if (!scheduleDate) {
+    const iso = buildScheduleISO();
+    if (!iso) {
       toast.error('Select a date and time');
       return;
     }
@@ -271,7 +287,7 @@ export default function NewPostPage() {
         image_prompt: imagePrompt || null,
         title: title || null,
         asset_url: generatedImageUrl || selectedAsset?.url || null,
-        scheduled_time: new Date(scheduleDate).toISOString(),
+        scheduled_time: iso,
         status: 'draft',
       });
       toast.success('Post added to queue');
@@ -725,14 +741,42 @@ export default function NewPostPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="scheduleTime">Date & Time</Label>
-                <Input
-                  id="scheduleTime"
-                  type="datetime-local"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="w-full sm:w-auto"
-                />
+                <Label>Date & Time</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="w-auto"
+                  />
+                  <select
+                    value={scheduleHour}
+                    onChange={(e) => setScheduleHour(e.target.value)}
+                    className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                      <option key={h} value={String(h).padStart(2, '0')}>{h}</option>
+                    ))}
+                  </select>
+                  <span className="flex items-center text-sm text-muted-foreground">:</span>
+                  <select
+                    value={scheduleMinute}
+                    onChange={(e) => setScheduleMinute(e.target.value)}
+                    className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {Array.from({ length: 60 }, (_, i) => (
+                      <option key={i} value={String(i).padStart(2, '0')}>{String(i).padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={scheduleAmPm}
+                    onChange={(e) => setScheduleAmPm(e.target.value as 'AM' | 'PM')}
+                    className="flex h-9 w-16 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex justify-between">
