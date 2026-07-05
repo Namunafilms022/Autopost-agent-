@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { callTextAI } from '@/lib/ai-config';
+import { tryParseJson } from '@/lib/json-utils';
 
 export async function POST(req: Request) {
   try {
@@ -36,8 +37,8 @@ Requirements:
       { maxTokens: 1024, temperature: 0.8 },
     );
 
-    const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const { data: parsed, error: parseError } = tryParseJson(content);
+    if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
 
     return NextResponse.json(parsed);
   } catch (err: unknown) {

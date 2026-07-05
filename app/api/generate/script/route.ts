@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 import { callTextAI } from '@/lib/ai-config';
+import { tryParseJson } from '@/lib/json-utils';
 import { PLATFORMS, getPlatform } from '@/lib/platforms';
 import { fetchProfileByToken } from '@/services/memory';
 import { buildProfileContext } from '@/types/memory';
@@ -32,8 +33,8 @@ async function callAI(prompt: string): Promise<ScriptResult> {
     { maxTokens: 2048, temperature: 0.8 },
   );
 
-  const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  const parsed = JSON.parse(cleaned);
+  const { data: parsed, error: parseError } = tryParseJson<Record<string, unknown>>(content);
+  if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
 
   if (!parsed.hook || !parsed.script || !parsed.cta) {
     throw new Error('Missing required fields in AI response');

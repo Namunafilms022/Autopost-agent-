@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { tryParseJson } from '@/lib/json-utils';
 import type { QueueItem, QueueItemInput } from '@/types/queue';
 
 export async function getQueueItems(): Promise<QueueItem[]> {
@@ -127,7 +128,7 @@ export async function approveQueueItem(id: string): Promise<QueueItem> {
       throw new Error(`Publish API failed: ${responseBody}`);
     }
 
-    const result = JSON.parse(responseBody);
+    const { data: result } = tryParseJson(responseBody);
     console.log(`[Queue] Publishing succeeded:`, result);
 
     const { error: updateError, data } = await supabase

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { callTextAI } from '@/lib/ai-config';
+import { tryParseJson } from '@/lib/json-utils';
 
 export async function POST(req: Request) {
   try {
@@ -43,8 +44,8 @@ Requirements:
       { maxTokens: 8192, temperature: 0.8 },
     );
 
-    const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const { data: parsed, error: parseError } = tryParseJson<Record<string, unknown>>(content);
+    if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
 
     if (!parsed.days || parsed.days.length !== 30) {
       throw new Error('AI did not return exactly 30 days');
