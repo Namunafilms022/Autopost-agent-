@@ -13,6 +13,7 @@ const PLATFORM_ALIAS: Record<string, string> = {
   linkedin: 'LinkedIn',
   x: 'X',
   tiktok: 'TikTok',
+  youtube: 'YouTube',
 };
 
 function getBaseUrl(): string {

@@ -1,7 +1,7 @@
 export interface SocialAccount {
   id: string;
   user_id: string;
-  platform: 'Instagram' | 'Facebook' | 'LinkedIn' | 'X' | 'TikTok';
+  platform: 'Instagram' | 'Facebook' | 'LinkedIn' | 'X' | 'TikTok' | 'YouTube';
   account_name: string;
   account_id: string;
   access_token: string;
@@ -29,6 +29,7 @@ export const SOCIAL_PLATFORMS = [
   { name: 'LinkedIn' as const, color: 'text-blue-700', bg: 'bg-blue-700/10', disabled: false },
   { name: 'X' as const, color: 'text-foreground', bg: 'bg-muted', disabled: false },
   { name: 'TikTok' as const, color: 'text-foreground', bg: 'bg-muted', disabled: false },
+  { name: 'YouTube' as const, color: 'text-red-500', bg: 'bg-red-500/10', disabled: false },
 ];
 
 

@@ -58,6 +58,18 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
       expires_in: data.expires_in as number | undefined,
     }),
   },
+  YouTube: {
+    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    clientIdEnv: 'YOUTUBE_CLIENT_ID',
+    clientSecretEnv: 'YOUTUBE_CLIENT_SECRET',
+    scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.upload',
+    parseTokenResponse: (data: Record<string, unknown>) => ({
+      access_token: data.access_token as string,
+      refresh_token: data.refresh_token as string | undefined,
+      expires_in: data.expires_in as number | undefined,
+    }),
+  },
 };
 
 export function getOAuthConfig(platform: string): OAuthConfig | undefined {
