@@ -7,7 +7,7 @@ export function getAuthorizationUrl(state: string): string {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'pages_show_list,pages_manage_metadata',
+    scope: 'pages_show_list,pages_read_engagement',
     state,
   });
 
