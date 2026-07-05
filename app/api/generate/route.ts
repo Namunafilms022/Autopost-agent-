@@ -94,7 +94,7 @@ async function callAI(
     { maxTokens: 1024, temperature: 0.8 },
   );
 
-  const { data: parsed, error: parseError } = tryParseJson<Record<string, unknown>>(content);
+  const { data: parsed, error: parseError } = tryParseJson<any>(content);
   if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
 
   if (contentSource === 'asset') {

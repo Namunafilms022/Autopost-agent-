@@ -33,9 +33,8 @@ async function callAI(prompt: string): Promise<ImagePromptResult> {
     { maxTokens: 2048, temperature: 0.8 },
   );
 
-  const { data: raw, error: parseError } = tryParseJson<Record<string, unknown>>(content);
+  const { data: parsed, error: parseError } = tryParseJson<any>(content);
   if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
-  const parsed = raw!;
 
   if (!parsed.imagePrompt) {
     throw new Error('Missing image prompt in AI response');

@@ -33,7 +33,7 @@ async function callAI(prompt: string): Promise<ScriptResult> {
     { maxTokens: 2048, temperature: 0.8 },
   );
 
-  const { data: parsed, error: parseError } = tryParseJson<Record<string, unknown>>(content);
+  const { data: parsed, error: parseError } = tryParseJson<any>(content);
   if (parseError) throw new Error(`Failed to parse AI response: ${parseError}`);
 
   if (!parsed.hook || !parsed.script || !parsed.cta) {
