@@ -339,7 +339,15 @@ export default function AutomationPage() {
       const res = await fetch('/api/automation/worker', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      toast.success(`Worker ran: ${data.succeeded} published, ${data.failed} failed`);
+      const errors = (data.results ?? [])
+        .filter((r: { success: boolean; error?: string }) => !r.success && r.error)
+        .map((r: { error: string }) => r.error);
+      const msg = `Worker ran: ${data.succeeded} published, ${data.failed} failed`;
+      if (errors.length > 0) {
+        toast.error(`${msg}\n\nFirst error: ${errors[0]}`);
+      } else {
+        toast.success(msg);
+      }
       loadStats();
     } catch (err: unknown) {
       toast.error(`Worker failed\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);

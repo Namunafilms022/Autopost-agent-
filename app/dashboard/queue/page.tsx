@@ -238,9 +238,19 @@ export default function QueuePage() {
                           {formatDate(item.scheduled_time)}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={STATUS_COLORS[item.status]}>
-                            {STATUS_LABELS[item.status]}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={STATUS_COLORS[item.status]}>
+                              {STATUS_LABELS[item.status]}
+                            </Badge>
+                            {item.error_message && (
+                              <span className="max-w-[200px] truncate text-xs text-destructive" title={item.error_message}>
+                                {item.error_message}
+                              </span>
+                            )}
+                            {item.retry_count > 0 && (
+                              <span className="text-xs text-muted-foreground">({item.retry_count}/3)</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">

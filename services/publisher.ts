@@ -169,17 +169,23 @@ export async function publishQueueItem(
 
   // Create publish log
   const now = new Date().toISOString();
-  const { data: log } = await supabase
-    .from('publish_logs')
-    .insert({
-      queue_item_id: queueItemId,
-      user_id: item.user_id,
-      platform,
-      status: 'publishing',
-      started_at: now,
-    })
-    .select()
-    .single();
+  let log: { id: string } | null = null;
+  try {
+    const { data: logData } = await supabase
+      .from('publish_logs')
+      .insert({
+        queue_item_id: queueItemId,
+        user_id: item.user_id,
+        platform,
+        status: 'publishing',
+        started_at: now,
+      })
+      .select()
+      .single();
+    log = logData;
+  } catch {
+    // Logging is non-critical; continue even if log insert fails
+  }
 
   let result: PublishResult;
 
