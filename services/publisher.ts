@@ -23,9 +23,13 @@ function getServiceClient() {
 
 async function publishToInstagram(
   caption: string,
-  imageUrl: string,
+  imageUrl: string | null,
   userId: string,
 ): Promise<PublishResult> {
+  if (!imageUrl) {
+    return { success: false, error_message: 'Instagram requires an image. Generate one before publishing.' };
+  }
+
   const supabase = getServiceClient();
 
   const { data: account } = await supabase
@@ -65,7 +69,7 @@ async function getConnectedAccount(
 
 async function publishToLinkedinPlatform(
   caption: string,
-  imageUrl: string,
+  imageUrl: string | null,
   userId: string,
 ): Promise<PublishResult> {
   const account = await getConnectedAccount(userId, 'LinkedIn');
@@ -82,7 +86,7 @@ async function publishToLinkedinPlatform(
 
 async function publishToXPlatform(
   caption: string,
-  imageUrl: string,
+  imageUrl: string | null,
   userId: string,
 ): Promise<PublishResult> {
   const account = await getConnectedAccount(userId, 'X');
@@ -99,7 +103,7 @@ async function publishToXPlatform(
 
 async function publishToTikTokPlatform(
   caption: string,
-  imageUrl: string,
+  imageUrl: string | null,
   userId: string,
 ): Promise<PublishResult> {
   const account = await getConnectedAccount(userId, 'TikTok');
@@ -116,7 +120,7 @@ async function publishToTikTokPlatform(
 
 async function publishToYouTubePlatform(
   caption: string,
-  imageUrl: string,
+  imageUrl: string | null,
   userId: string,
   title?: string | null,
 ): Promise<PublishResult> {
@@ -155,11 +159,7 @@ export async function publishQueueItem(
 
   const platform = item.platform;
   const caption = item.caption ?? '';
-  const imageUrl = item.asset_url ?? '';
-
-  if (!imageUrl) {
-    return { success: false, error: 'No asset_url set. Generate an image before publishing.' };
-  }
+  const imageUrl = item.asset_url ?? null;
 
   // Set status to publishing
   await supabase
