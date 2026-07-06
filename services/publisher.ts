@@ -100,7 +100,7 @@ async function publishToInstagram(
 
   const supabase = getServiceClient();
 
-  const { data: account } = await supabase
+  const { data: igAccount } = await supabase
     .from('social_accounts')
     .select('access_token, account_id')
     .eq('user_id', userId)
@@ -108,16 +108,40 @@ async function publishToInstagram(
     .eq('status', 'connected')
     .single();
 
-  if (!account?.access_token || !account?.account_id) {
+  if (!igAccount?.account_id) {
     return { success: false, error_message: 'No connected Instagram account found' };
   }
 
-  try {
-    const result = await publishMedia(account.account_id, caption, imageUrl, account.access_token);
-    return { success: true, platform_response: result as unknown as Record<string, unknown> };
-  } catch (err) {
-    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  // Try publishing with the Instagram token first
+  if (igAccount.access_token) {
+    try {
+      const result = await publishMedia(igAccount.account_id, caption, imageUrl, igAccount.access_token);
+      return { success: true, platform_response: result as unknown as Record<string, unknown> };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Publisher] Instagram token failed, trying Facebook token:', msg);
+    }
   }
+
+  // Fallback: try using the Facebook User Token (which works with graph.facebook.com)
+  const { data: fbAccount } = await supabase
+    .from('social_accounts')
+    .select('access_token')
+    .eq('user_id', userId)
+    .eq('platform', 'Facebook')
+    .eq('status', 'connected')
+    .single();
+
+  if (fbAccount?.access_token) {
+    try {
+      const result = await publishMedia(igAccount.account_id, caption, imageUrl, fbAccount.access_token);
+      return { success: true, platform_response: result as unknown as Record<string, unknown> };
+    } catch (err) {
+      return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  return { success: false, error_message: 'Instagram token failed and no connected Facebook account found as fallback' };
 }
 
 async function getConnectedAccount(

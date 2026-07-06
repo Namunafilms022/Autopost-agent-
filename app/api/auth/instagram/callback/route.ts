@@ -58,16 +58,51 @@ export async function GET(req: NextRequest) {
     return redirectToSocial(`Token exchange failed: ${msg}`);
   }
 
-  // --- Stage 2: Exchange for long-lived Facebook Graph token ---
+  // --- Stage 2: Exchange for long-lived token ---
+  // Try Facebook's fb_exchange_token first (converts IG token to Facebook Graph token)
   try {
-    const longLived = await exchangeForLongLivedToken(token);
-    token = longLived.access_token;
-    expiresIn = longLived.expires_in;
-    addLog('long-lived', 'Short-lived token exchanged for long-lived Facebook Graph token');
+    const fbClientId = process.env.FACEBOOK_CLIENT_ID!;
+    const fbClientSecret = process.env.FACEBOOK_CLIENT_SECRET!;
+    if (fbClientId && fbClientSecret) {
+      const url = new URL('https://graph.facebook.com/v22.0/oauth/access_token');
+      url.searchParams.set('grant_type', 'fb_exchange_token');
+      url.searchParams.set('client_id', fbClientId);
+      url.searchParams.set('client_secret', fbClientSecret);
+      url.searchParams.set('fb_exchange_token', token);
+      const fbRes = await fetch(url.toString());
+      if (fbRes.ok) {
+        const fbData = await fbRes.json() as { access_token: string; expires_in: number };
+        token = fbData.access_token;
+        expiresIn = fbData.expires_in;
+        addLog('long-lived', 'IG token exchanged via Facebook fb_exchange_token — got Facebook Graph token');
+      } else {
+        addLog('long-lived-fb-failed', 'Facebook exchange failed, trying Instagram exchange');
+        // Fallback: try Instagram's own long-lived exchange
+        try {
+          const longLived = await exchangeForLongLivedToken(token);
+          token = longLived.access_token;
+          expiresIn = longLived.expires_in;
+          addLog('long-lived', 'IG token exchanged via Instagram ig_exchange_token');
+        } catch (igErr) {
+          const igMsg = igErr instanceof Error ? igErr.message : 'Unknown';
+          addLog('long-lived-failed', `Both exchanges failed: ${igMsg} — storing short-lived token`);
+        }
+      }
+    } else {
+      addLog('long-lived-no-fb-creds', 'Facebook credentials not set, trying Instagram exchange');
+      try {
+        const longLived = await exchangeForLongLivedToken(token);
+        token = longLived.access_token;
+        expiresIn = longLived.expires_in;
+        addLog('long-lived', 'IG token exchanged via Instagram ig_exchange_token');
+      } catch (igErr) {
+        const igMsg = igErr instanceof Error ? igErr.message : 'Unknown';
+        addLog('long-lived-failed', `Instagram exchange failed: ${igMsg} — storing short-lived token`);
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown';
-    addLog('long-lived-failed', `Long-lived exchange failed, using short-lived token: ${msg}`);
-    // Continue with short-lived token (will expire in 1 hour)
+    addLog('long-lived-error', `Exchange error: ${msg}`);
   }
 
   // --- Stage 3: Resolve Instagram Account ---
