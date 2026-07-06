@@ -242,25 +242,66 @@ async function tryViaPageInstagramAccounts(userToken: string): Promise<IgAccount
   return null;
 }
 
+function getTokenType(token: string): string {
+  if (token.startsWith('EAA')) return 'Facebook User Token (EAA...)';
+  if (token.startsWith('EAAC')) return 'Facebook User Token (EAAC...)';
+  if (token.startsWith('IGQVJ')) return 'Instagram API Token (IGQVJ...)';
+  if (token.startsWith('IGA')) return 'Instagram API Token (IGA...)';
+  return `Unknown token format (starts with: ${token.slice(0, 6)}...)`;
+}
+
+function getObjectType(id: string): string {
+  if (id.startsWith('178414')) return 'Instagram Business Account ID';
+  if (id.startsWith('266')) return 'Instagram User ID (non-business)';
+  if (/^\d{15,17}$/.test(id) && !id.startsWith('178414')) return 'Unknown numeric ID (likely Instagram User ID)';
+  if (/^\d+$/.test(id)) return 'Facebook Page ID or numeric ID';
+  return 'Unknown ID format';
+}
+
 export async function createMediaContainer(
   igUserId: string,
   imageUrl: string,
   caption: string,
   accessToken: string,
 ): Promise<string> {
+  const endpoint = `${FB_API}/${igUserId}/media`;
+  console.error(`[MetaDebug] === createMediaContainer ===`);
+  console.error(`[MetaDebug] Graph API Endpoint: ${endpoint}`);
+  console.error(`[MetaDebug] HTTP Method: POST`);
+  console.error(`[MetaDebug] Object ID: ${igUserId}`);
+  console.error(`[MetaDebug] Object Type (detected): ${getObjectType(igUserId)}`);
+  console.error(`[MetaDebug] Access Token: ${accessToken.slice(0, 12)}... (${getTokenType(accessToken)})`);
+  console.error(`[MetaDebug] Image URL length: ${imageUrl.length} chars`);
+  console.error(`[MetaDebug] Caption length: ${caption.length} chars`);
+  console.error(`[MetaDebug] Platform: Instagram`);
+
+  if (!igUserId.startsWith('178414')) {
+    console.error(`[MetaDebug] ❌ OBJECT ID MISMATCH: Expected Instagram Business Account ID (178414...), got ${getObjectType(igUserId)} (${igUserId}). The ID from DB is not an Instagram Business Account ID.`);
+  }
+
   const params = new URLSearchParams({
     image_url: imageUrl,
     caption,
     access_token: accessToken,
   });
 
-  const res = await fetch(`${FB_API}/${igUserId}/media`, { method: 'POST', body: params });
+  const res = await fetch(endpoint, { method: 'POST', body: params });
   const body = await res.json() as { id?: string; error?: IgError };
 
+  console.error(`[MetaDebug] Response status: ${res.status}`);
+  console.error(`[MetaDebug] Response body:`, JSON.stringify(body).slice(0, 500));
+
   if (!res.ok || !body.id) {
-    throw new Error(parseError(body.error || body));
+    const errMsg = parseError(body.error || body);
+    console.error(`[MetaDebug] ❌ FAILED: ${errMsg}`);
+    if (body.error?.code === 100 && body.error?.error_subcode === 33) {
+      console.error(`[MetaDebug] ❌ Code 100/33: Object does not exist or wrong ID type.`);
+      console.error(`[MetaDebug] ❌ The ID ${igUserId} is ${getObjectType(igUserId)}, but the endpoint ${endpoint} requires an Instagram Business Account ID.`);
+    }
+    throw new Error(errMsg);
   }
 
+  console.error(`[MetaDebug] ✅ Media container created: ${body.id}`);
   return body.id;
 }
 
@@ -269,13 +310,26 @@ export async function getMediaContainerStatus(
   accessToken: string,
 ): Promise<{ status: string; status_code?: string }> {
   const url = `${FB_API}/${containerId}?fields=status,status_code&access_token=${accessToken}`;
+  console.error(`[MetaDebug] === getMediaContainerStatus ===`);
+  console.error(`[MetaDebug] Graph API Endpoint: ${url}`);
+  console.error(`[MetaDebug] HTTP Method: GET`);
+  console.error(`[MetaDebug] Container ID: ${containerId}`);
+  console.error(`[MetaDebug] Object Type (detected): ${getObjectType(containerId)}`);
+  console.error(`[MetaDebug] Platform: Instagram`);
+
   const res = await fetch(url);
   const body = await res.json() as { status?: string; status_code?: string; error?: IgError };
 
+  console.error(`[MetaDebug] Response status: ${res.status}`);
+  console.error(`[MetaDebug] Response body:`, JSON.stringify(body).slice(0, 500));
+
   if (!res.ok || body.error) {
-    throw new Error(parseError(body.error || body));
+    const errMsg = parseError(body.error || body);
+    console.error(`[MetaDebug] ❌ FAILED: ${errMsg}`);
+    throw new Error(errMsg);
   }
 
+  console.error(`[MetaDebug] ✅ Status: ${body.status}, code: ${body.status_code}`);
   return { status: body.status ?? 'UNKNOWN', status_code: body.status_code };
 }
 
@@ -284,18 +338,33 @@ export async function publishMediaContainer(
   containerId: string,
   accessToken: string,
 ): Promise<string> {
+  const endpoint = `${FB_API}/${igUserId}/media_publish`;
+  console.error(`[MetaDebug] === publishMediaContainer ===`);
+  console.error(`[MetaDebug] Graph API Endpoint: ${endpoint}`);
+  console.error(`[MetaDebug] HTTP Method: POST`);
+  console.error(`[MetaDebug] IG User ID: ${igUserId}`);
+  console.error(`[MetaDebug] Container ID: ${containerId}`);
+  console.error(`[MetaDebug] Object Type (detected - IG ID): ${getObjectType(igUserId)}`);
+  console.error(`[MetaDebug] Platform: Instagram`);
+
   const params = new URLSearchParams({
     creation_id: containerId,
     access_token: accessToken,
   });
 
-  const res = await fetch(`${FB_API}/${igUserId}/media_publish`, { method: 'POST', body: params });
+  const res = await fetch(endpoint, { method: 'POST', body: params });
   const body = await res.json() as { id?: string; error?: IgError };
 
+  console.error(`[MetaDebug] Response status: ${res.status}`);
+  console.error(`[MetaDebug] Response body:`, JSON.stringify(body).slice(0, 500));
+
   if (!res.ok || !body.id) {
-    throw new Error(parseError(body.error || body));
+    const errMsg = parseError(body.error || body);
+    console.error(`[MetaDebug] ❌ FAILED: ${errMsg}`);
+    throw new Error(errMsg);
   }
 
+  console.error(`[MetaDebug] ✅ Published: ${body.id}`);
   return body.id;
 }
 
@@ -305,6 +374,16 @@ export async function publishMedia(
   imageUrl: string,
   accessToken: string,
 ): Promise<{ mediaId: string; publishId: string }> {
+  console.error(`[MetaDebug] ========================================`);
+  console.error(`[MetaDebug] publishMedia() ENTRY`);
+  console.error(`[MetaDebug] igUserId (from DB): ${igUserId}`);
+  console.error(`[MetaDebug] igUserId type: ${getObjectType(igUserId)}`);
+  console.error(`[MetaDebug] token type: ${getTokenType(accessToken)}`);
+  console.error(`[MetaDebug] token first 20 chars: ${accessToken.slice(0, 20)}...`);
+  console.error(`[MetaDebug] imageUrl: ${imageUrl}`);
+  console.error(`[MetaDebug] caption: ${caption.slice(0, 100)}`);
+  console.error(`[MetaDebug] ========================================`);
+
   const containerId = await createMediaContainer(igUserId, imageUrl, caption, accessToken);
 
   const maxAttempts = 10;

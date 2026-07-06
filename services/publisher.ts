@@ -160,37 +160,59 @@ async function publishToInstagram(
   // Try to auto-repair the Instagram Business Account ID
   let igId = igAccount.account_id;
 
-  // Test if the token works with graph.facebook.com at all
+  function tokenType(t: string): string {
+    if (t.startsWith('EAA')) return 'Facebook User Token (EAA...)';
+    if (t.startsWith('IGQVJ')) return 'Instagram API Token (IGQVJ...)';
+    return `Unknown (${t.slice(0, 6)}...)`;
+  }
+
+  function idType(id: string): string {
+    if (id.startsWith('178414')) return 'Instagram Business Account ID';
+    if (id.startsWith('266')) return 'Instagram User ID (non-business)';
+    return 'Unknown numeric ID';
+  }
+
+  console.error(`[Publisher] Auto-repair: stored account_id=${igId} (${idType(igId)})`);
+  console.error(`[Publisher] Auto-repair: effectiveToken=${effectiveToken.slice(0, 14)}... (${tokenType(effectiveToken)})`);
+
   try {
-    console.error('[Publisher] IG auto-repair: checking /me/instagram_business_account');
+    console.error('[Publisher] Auto-repair: checking /me/instagram_business_account');
     const testRes = await fetch(`${FB_API}/me/instagram_business_account?fields=id,username&access_token=${effectiveToken}`);
     const testData = await testRes.json();
-    console.error('[Publisher] IG /me/instagram_business_account response:', JSON.stringify(testData).slice(0, 500));
+    console.error(`[Publisher] /me/instagram_business_account status=${testRes.status}`, JSON.stringify(testData).slice(0, 500));
     if (testRes.ok && testData.id) {
       igId = testData.id;
+      console.error(`[Publisher] Auto-repair: resolved ID=${igId} (${idType(igId)})`);
       await supabase.from('social_accounts').update({ account_id: igId }).eq('user_id', userId).eq('platform', 'Instagram');
-      console.error('[Publisher] Auto-repaired IG account_id to:', igId);
+      console.error('[Publisher] Auto-repair: DB updated');
     } else {
-      console.error('[Publisher] /me/instagram_business_account failed:', testData?.error?.message || 'unknown');
-      // Try /me/accounts as fallback
-      console.error('[Publisher] IG auto-repair: checking /me/accounts');
+      console.error('[Publisher] /me/instagram_business_account FAILED:', testData?.error?.message || 'no error field');
+      console.error('[Publisher] Auto-repair: checking /me/accounts');
       const pagesRes = await fetch(`${FB_API}/me/accounts?fields=instagram_business_account{id},name&access_token=${effectiveToken}`);
       const pagesData = await pagesRes.json();
-      console.error('[Publisher] IG /me/accounts response:', JSON.stringify(pagesData).slice(0, 500));
+      console.error(`[Publisher] /me/accounts status=${pagesRes.status}`, JSON.stringify(pagesData).slice(0, 500));
       if (pagesRes.ok && pagesData.data) {
         for (const page of pagesData.data) {
           if (page.instagram_business_account?.id) {
             igId = page.instagram_business_account.id;
+            console.error(`[Publisher] Auto-repair: resolved via /me/accounts ID=${igId} (${idType(igId)})`);
             await supabase.from('social_accounts').update({ account_id: igId }).eq('user_id', userId).eq('platform', 'Instagram');
-            console.error('[Publisher] Auto-repaired IG account_id via /me/accounts to:', igId);
+            console.error('[Publisher] Auto-repair: DB updated');
             break;
           }
         }
+        if (!pagesData.data.some((p: any) => p.instagram_business_account?.id)) {
+          console.error('[Publisher] Auto-repair: /me/accounts returned pages but NONE have linked IG Business Account');
+        }
+      } else {
+        console.error('[Publisher] Auto-repair: /me/accounts endpoint failed or no data');
       }
     }
   } catch (err) {
     console.error('[Publisher] IG auto-repair error:', err);
   }
+
+  console.error(`[Publisher] Auto-repair FINAL: igId=${igId} (${idType(igId)})`);
 
   try {
     const result = await publishMedia(igId, caption, imageUrl, effectiveToken);
