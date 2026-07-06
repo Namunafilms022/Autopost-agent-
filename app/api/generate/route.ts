@@ -108,7 +108,12 @@ async function callAI(
 
   const { data: parsed, error: parseError } = tryParseJson<any>(content);
   if (parseError) {
+    console.error('[Generate] AI raw response:', content);
     throw new Error(`Failed to parse AI response. The AI returned an unexpected format. Try rephrasing your topic.`);
+  }
+
+  if (process.env.NODE_ENV === 'development' || Math.random() < 0.1) {
+    console.log('[Generate] AI response parsed:', JSON.stringify(parsed).slice(0, 500));
   }
 
   const caption = normalizeField(parsed, 'caption', 'Caption');
