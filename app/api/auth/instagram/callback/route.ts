@@ -24,21 +24,12 @@ function redirectConnected(): NextResponse {
 }
 
 export async function GET(req: NextRequest) {
-  addLog('callback-received', `Callback received`, { url: req.url, method: req.method });
+  addLog('callback-received', 'Callback received', { url: req.url });
 
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state');
   const errorParam = req.nextUrl.searchParams.get('error');
   const errorDescription = req.nextUrl.searchParams.get('error_description');
-
-  addLog('callback-params', 'Parsed query params', {
-    hasCode: !!code,
-    hasState: !!state,
-    hasError: !!errorParam,
-    errorDescription: errorDescription || null,
-    codeLength: code?.length ?? 0,
-    statePreview: state ? `${state.slice(0, 20)}...` : null,
-  });
 
   if (errorParam) {
     addLog('callback-error', `Facebook returned error: ${errorParam}`, { errorDescription });
@@ -46,92 +37,86 @@ export async function GET(req: NextRequest) {
   }
 
   if (!code) {
-    addLog('callback-error', 'No authorization code received from Facebook');
+    addLog('callback-error', 'Missing authorization code');
     return redirectToSocial('OAuth callback missing code');
   }
 
-  if (!state) {
-    addLog('callback-error', 'Invalid state parameter');
-    return redirectToSocial('OAuth callback missing state');
-  }
-
-  const userId = state.split(':')[0];
-  if (!userId) {
-    addLog('callback-error', `Could not parse user from state: ${state}`);
-    return redirectToSocial('OAuth callback invalid state format');
-  }
-
-  addLog('callback-user', `Parsed userId from state`, { userId: userId.slice(0, 10) + '...' });
-
-  // --- Stage 2: Token Exchange ---
-  addLog('token-exchange', 'Starting token exchange');
+  // --- Stage 1: Token Exchange ---
   let token: string;
+  let igUserId: string | null = null;
   let expiresIn: number | undefined;
 
   try {
     const r = await exchangeCode(code);
     token = r.access_token;
+    igUserId = r.user_id;
     expiresIn = r.expires_in;
-    addLog('token-exchange', 'Short-lived token obtained', { tokenLength: token.length, expiresIn });
-
-    try {
-      const lt = await exchangeForLongLivedToken(token);
-      token = lt.access_token;
-      expiresIn = lt.expires_in;
-      addLog('token-exchange', 'Long-lived token obtained', { tokenLength: token.length, expiresIn });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown';
-      addLog('token-exchange', `Long-lived exchange failed, using short-lived: ${msg}`);
-    }
+    addLog('token-exchange', `Token obtained, IG user_id: ${igUserId}`, { tokenLength: token.length, expiresIn });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown';
     addLog('token-exchange', `FAILED: ${msg}`);
     return redirectToSocial(`Token exchange failed: ${msg}`);
   }
 
-  // --- Stage 3: Meta Graph API ---
-  addLog('graph-api', 'Calling resolveInstagramBusinessAccount');
-  let resolved: { igId: string; pageId: string; pageName: string; pageAccessToken: string };
+  // --- Stage 2: Resolve Instagram Account ---
+  // Try to get the IG account info from API, fall back to direct user_id from token exchange
+  let pageId = igUserId;
+  let pageName = `Instagram ${igUserId}`;
+  let pageAccessToken = token;
+
   try {
-    resolved = await resolveInstagramBusinessAccount(token);
-    addLog('graph-api', 'Instagram account resolved', resolved);
+    const resolved = await resolveInstagramBusinessAccount(token);
+    pageId = resolved.pageId || igUserId;
+    pageName = resolved.pageName;
+    pageAccessToken = resolved.pageAccessToken;
+    if (resolved.igId) igUserId = resolved.igId;
+    addLog('resolution-success', 'Resolved Instagram account via API', resolved);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown';
-    addLog('graph-api', `FAILED: ${msg}`);
-    return redirectToSocial(`Instagram account not found: ${msg}`);
+    addLog('resolution-fallback', `API resolution failed, using direct user_id: ${msg}`);
+    // Fall back to the user_id from token exchange
+    if (!igUserId) {
+      return redirectToSocial(`Instagram account not found: ${msg}`);
+    }
   }
 
-  // --- Stage 4: Database Update ---
-  addLog('db-upsert', 'Upserting social_accounts record', {
-    userId: userId.slice(0, 10) + '...',
-    platform: 'Instagram',
-    accountName: resolved.pageName,
-    accountId: resolved.igId,
-  });
+  // --- Stage 3: Database Update ---
+  const userId = state?.split(':')[0];
+  if (!userId) {
+    return redirectToSocial('Invalid state parameter');
+  }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const expiresAt = expiresIn
     ? new Date(Date.now() + expiresIn * 1000).toISOString()
     : null;
 
+  addLog('db-upsert', 'Saving Instagram account', {
+    userId: userId.slice(0, 10) + '...',
+    igUserId,
+    pageId,
+    pageName,
+    platform: 'Instagram',
+  });
+
   const { error: dbError } = await supabase.from('social_accounts').upsert({
     user_id: userId,
     platform: 'Instagram',
-    account_name: resolved.pageName,
-    account_id: resolved.igId,
-    access_token: token,
+    account_name: pageName,
+    account_id: igUserId || pageId,
+    access_token: pageAccessToken,
     token_expires_at: expiresAt,
     status: 'connected',
     connected_at: new Date().toISOString(),
   }, { onConflict: 'user_id, platform' });
 
   if (dbError) {
-    addLog('db-upsert', `FAILED: ${dbError.message}`, { details: dbError.details, code: dbError.code, hint: dbError.hint });
+    addLog('db-upsert', `FAILED: ${dbError.message}`, { details: dbError.details, code: dbError.code });
     return redirectToSocial(`Database update failed: ${dbError.message}`);
   }
 
-  addLog('db-upsert', 'Database updated successfully');
-  addLog('flow-complete', 'Instagram OAuth flow completed successfully');
+  addLog('db-upsert', 'Success');
+  addLog('flow-complete', 'Instagram OAuth completed successfully');
 
   return redirectConnected();
 }

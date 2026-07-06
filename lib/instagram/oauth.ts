@@ -5,30 +5,30 @@ export function getAuthorizationUrl(state: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
-  addLog('auth-url', 'Building Instagram Login URL', { clientId: clientId?.slice(0, 6) + '...', baseUrl, redirectUri });
+  addLog('auth-url', 'Building Instagram Business Login URL', { clientId: clientId?.slice(0, 6) + '...', baseUrl, redirectUri });
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_read_engagement',
+    scope: 'instagram_business_basic,instagram_business_content_publish',
     state,
   });
 
-  const url = `https://www.facebook.com/v22.0/dialog/oauth?${params}`;
-  addLog('auth-url', 'Generated OAuth URL', { url: url.slice(0, 100) + '...' });
+  const url = `https://www.instagram.com/oauth/authorize?${params}`;
+  addLog('auth-url', 'Generated OAuth URL', { url: url.slice(0, 120) + '...' });
   return url;
 }
 
 export async function exchangeCode(
   code: string,
-): Promise<{ access_token: string; user_id: string; expires_in?: number; permissions?: string[] }> {
+): Promise<{ access_token: string; user_id: string; expires_in?: number }> {
   const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
-  addLog('exchange-code', 'Exchanging code via Instagram Login API', {
+  addLog('exchange-code', 'Exchanging code via Instagram API', {
     clientId: clientId?.slice(0, 6) + '...',
     clientSecretSet: !!clientSecret,
     codeLength: code.length,
@@ -43,7 +43,7 @@ export async function exchangeCode(
     redirect_uri: redirectUri,
   });
 
-  const res = await fetch('https://graph.facebook.com/v22.0/oauth/access_token', {
+  const res = await fetch('https://api.instagram.com/oauth/access_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -57,22 +57,20 @@ export async function exchangeCode(
 
   const data = await res.json();
 
-  if (!data.access_token) {
-    addLog('exchange-code', 'FAILED: No access_token in response', { data });
-    throw new Error('Instagram token exchange: no access_token in response');
+  if (!data.access_token || !data.user_id) {
+    addLog('exchange-code', 'FAILED: Missing access_token or user_id in response', { data });
+    throw new Error('Instagram token exchange: missing access_token or user_id');
   }
 
   addLog('exchange-code', 'Token exchange successful', {
     tokenLength: data.access_token?.length,
     userId: data.user_id,
-    permissions: data.permissions,
   });
 
   return {
     access_token: data.access_token,
     user_id: data.user_id,
     expires_in: data.expires_in,
-    permissions: data.permissions,
   };
 }
 
