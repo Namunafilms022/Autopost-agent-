@@ -54,6 +54,11 @@ export async function resolveInstagramBusinessAccount(
   const result3 = await tryViaUserEndpoint(accessToken);
   if (result3) return result3;
 
+  // Strategy 4: Try /{page-id}/instagram_accounts with page access token
+  addLog('graph-strategy-4', 'Trying /{page-id}/instagram_accounts endpoint');
+  const result4 = await tryViaPageInstagramAccounts(accessToken);
+  if (result4) return result4;
+
   addLog('graph-exhausted', 'All strategies exhausted. Instagram account not found.');
   throw new Error(
     'No Facebook Page linked to an Instagram Business account. '
@@ -178,6 +183,62 @@ async function tryViaUserEndpoint(userToken: string): Promise<IgAccountInfo | nu
   }
 
   addLog('strategy-3-none', '/me/instagram_business_account did not return an account');
+  return null;
+}
+
+async function tryViaPageInstagramAccounts(userToken: string): Promise<IgAccountInfo | null> {
+  // First get pages
+  const listUrl = `${FB_API}/me/accounts?fields=id,name,access_token&access_token=${userToken}`;
+  const listRes = await fetch(listUrl);
+  const listBody = await listRes.json();
+  if (!listRes.ok) return null;
+
+  const pages: Array<Record<string, unknown>> = listBody.data ?? [];
+
+  for (const page of pages) {
+    const pageId = page.id as string;
+    const pageToken = page.access_token as string || userToken;
+
+    addLog('strategy-4-trying', `Querying /${pageId}/instagram_accounts`, { pageId });
+
+    // With page token
+    const url = `${FB_API}/${pageId}/instagram_accounts?fields=id,username&access_token=${pageToken}`;
+    const res = await fetch(url);
+    const body = await res.json();
+    addLog('strategy-4-response', `Status ${res.status}`, { body: JSON.stringify(body).slice(0, 2000) });
+
+    if (res.ok && body.data && body.data.length > 0) {
+      const igAccount = body.data[0];
+      const result: IgAccountInfo = {
+        igId: igAccount.id,
+        pageId,
+        pageName: (page.name as string) || `Instagram ${igAccount.id}`,
+        pageAccessToken: pageToken,
+      };
+      addLog('strategy-4-found', 'Found Instagram account via /instagram_accounts', result);
+      return result;
+    }
+
+    // Try with user token too
+    const url2 = `${FB_API}/${pageId}/instagram_accounts?fields=id,username&access_token=${userToken}`;
+    const res2 = await fetch(url2);
+    const body2 = await res2.json();
+    addLog('strategy-4-user-response', `Status ${res2.status}`, { body: JSON.stringify(body2).slice(0, 2000) });
+
+    if (res2.ok && body2.data && body2.data.length > 0) {
+      const igAccount = body2.data[0];
+      const result: IgAccountInfo = {
+        igId: igAccount.id,
+        pageId,
+        pageName: (page.name as string) || `Instagram ${igAccount.id}`,
+        pageAccessToken: pageToken,
+      };
+      addLog('strategy-4-found', 'Found Instagram account via /instagram_accounts (user token)', result);
+      return result;
+    }
+  }
+
+  addLog('strategy-4-none', 'No Instagram account found via /instagram_accounts');
   return null;
 }
 
