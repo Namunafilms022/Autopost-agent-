@@ -5,30 +5,30 @@ export function getAuthorizationUrl(state: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
-  addLog('auth-url', 'Building auth URL', { clientId: clientId?.slice(0, 6) + '...', baseUrl, redirectUri, state: state.slice(0, 20) + '...' });
+  addLog('auth-url', 'Building Instagram Login URL', { clientId: clientId?.slice(0, 6) + '...', baseUrl, redirectUri });
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'pages_show_list,pages_read_engagement,instagram_basic',
+    scope: 'instagram_business_basic,instagram_business_content_publish,pages_show_list,pages_read_engagement',
     state,
   });
 
   const url = `https://www.facebook.com/v22.0/dialog/oauth?${params}`;
-  addLog('auth-url', 'Generated Facebook OAuth URL', { url: url.slice(0, 100) + '...' });
+  addLog('auth-url', 'Generated OAuth URL', { url: url.slice(0, 100) + '...' });
   return url;
 }
 
 export async function exchangeCode(
   code: string,
-): Promise<{ access_token: string; expires_in?: number }> {
+): Promise<{ access_token: string; user_id: string; permissions?: string[] }> {
   const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
-  addLog('exchange-code', 'Exchanging code for token', {
+  addLog('exchange-code', 'Exchanging code via Instagram Login API', {
     clientId: clientId?.slice(0, 6) + '...',
     clientSecretSet: !!clientSecret,
     codeLength: code.length,
@@ -52,16 +52,27 @@ export async function exchangeCode(
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     addLog('exchange-code', `FAILED: Token exchange returned ${res.status}`, { response: text });
-    throw new Error(`Token exchange failed (${res.status}): ${text}`);
+    throw new Error(`Instagram token exchange failed (${res.status}): ${text}`);
   }
 
-  const data = await res.json() as { access_token: string; expires_in?: number };
+  const data = await res.json();
+
+  if (!data.access_token) {
+    addLog('exchange-code', 'FAILED: No access_token in response', { data });
+    throw new Error('Instagram token exchange: no access_token in response');
+  }
+
   addLog('exchange-code', 'Token exchange successful', {
     tokenLength: data.access_token?.length,
-    expires_in: data.expires_in,
+    userId: data.user_id,
+    permissions: data.permissions,
   });
 
-  return { access_token: data.access_token, expires_in: data.expires_in };
+  return {
+    access_token: data.access_token,
+    user_id: data.user_id,
+    permissions: data.permissions,
+  };
 }
 
 export async function exchangeForLongLivedToken(
