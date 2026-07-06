@@ -105,27 +105,72 @@ export async function GET(req: NextRequest) {
     addLog('long-lived-error', `Exchange error: ${msg}`);
   }
 
-  // --- Stage 3: Resolve Instagram Account ---
-  // Try to get the IG account info from API, fall back to direct user_id from token exchange
-  let pageId = igUserId;
+  // --- Stage 3: Resolve Instagram Business Account ID ---
+  // The token exchange returns the Instagram User ID (e.g. 266...), but the
+  // Facebook Graph API requires the Instagram Business Account ID (e.g. 178414...).
+  // We need to resolve it via the Graph API.
   let pageName = `Instagram ${igUserId}`;
-  let pageAccessToken = token;
+  let resolvedIgId: string | null = null;
 
+  // Strategy A: resolveInstagramBusinessAccount (uses /me/accounts, /me/instagram_business_account)
   try {
     const resolved = await resolveInstagramBusinessAccount(token);
-    pageId = resolved.pageId || igUserId;
-    pageName = resolved.pageName;
-    pageAccessToken = resolved.pageAccessToken;
-    if (resolved.igId) igUserId = resolved.igId;
-    addLog('resolution-success', 'Resolved Instagram account via API', resolved);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unknown';
-    addLog('resolution-fallback', `API resolution failed, using direct user_id: ${msg}`);
-    // Fall back to the user_id from token exchange
-    if (!igUserId) {
-      return redirectToSocial(`Instagram account not found: ${msg}`);
+    addLog('resolution-a', 'Strategy A succeeded', resolved);
+    if (resolved.igId) resolvedIgId = resolved.igId;
+    if (resolved.pageName) pageName = resolved.pageName;
+  } catch (errA) {
+    addLog('resolution-a-failed', `Strategy A failed: ${errA instanceof Error ? errA.message : 'Unknown'}`);
+  }
+
+  // Strategy B: direct call to /me/instagram_business_account
+  if (!resolvedIgId) {
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v22.0/me/instagram_business_account?fields=id,username,name&access_token=${token}`,
+      );
+      const data = await res.json() as { id?: string; username?: string; name?: string; error?: { message: string } };
+      if (res.ok && data.id) {
+        resolvedIgId = data.id;
+        pageName = data.name || data.username || `Instagram ${data.id}`;
+        addLog('resolution-b', 'Strategy B succeeded: /me/instagram_business_account', data);
+      } else {
+        addLog('resolution-b-failed', `/me/instagram_business_account: ${data.error?.message || 'no id'}`);
+      }
+    } catch (errB) {
+      addLog('resolution-b-error', `Strategy B error: ${errB instanceof Error ? errB.message : 'Unknown'}`);
     }
   }
+
+  // Strategy C: if we have a Facebook-type token, try /me/accounts
+  if (!resolvedIgId) {
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v22.0/me/accounts?fields=instagram_business_account{id},name&access_token=${token}`,
+      );
+      const data = await res.json() as { data?: Array<{ instagram_business_account?: { id: string }; name: string }> };
+      if (res.ok && data.data) {
+        for (const page of data.data) {
+          if (page.instagram_business_account?.id) {
+            resolvedIgId = page.instagram_business_account.id;
+            pageName = page.name || `Instagram ${resolvedIgId}`;
+            addLog('resolution-c', 'Strategy C succeeded: /me/accounts', { igId: resolvedIgId, pageName });
+            break;
+          }
+        }
+        if (!resolvedIgId) addLog('resolution-c-no-ig', '/me/accounts returned pages but none have linked IG');
+      }
+    } catch (errC) {
+      addLog('resolution-c-error', `Strategy C error: ${errC instanceof Error ? errC.message : 'Unknown'}`);
+    }
+  }
+
+  if (!resolvedIgId) {
+    addLog('resolution-exhausted', 'All strategies exhausted, using raw IG user_id from token exchange');
+    resolvedIgId = igUserId;
+  }
+
+  const finalIgId = resolvedIgId;
+  addLog('resolution-final', `Using IG Business Account ID: ${finalIgId}`);
 
   // --- Stage 4: Database Update ---
   const userId = state?.split(':')[0];
@@ -140,18 +185,18 @@ export async function GET(req: NextRequest) {
 
   addLog('db-upsert', 'Saving Instagram account', {
     userId: userId.slice(0, 10) + '...',
-    igUserId,
-    pageId,
+    igUserId: finalIgId,
     pageName,
     platform: 'Instagram',
+    tokenExpiresAt: expiresAt,
   });
 
   const { error: dbError } = await supabase.from('social_accounts').upsert({
     user_id: userId,
     platform: 'Instagram',
     account_name: pageName,
-    account_id: igUserId || pageId,
-    access_token: pageAccessToken,
+    account_id: finalIgId,
+    access_token: token,
     token_expires_at: expiresAt,
     status: 'connected',
     connected_at: new Date().toISOString(),
