@@ -157,14 +157,37 @@ async function publishToInstagram(
     return { success: false, error_message: 'No access token available for Instagram publishing' };
   }
 
-  // Try to auto-repair the Instagram Business Account ID if the stored one looks wrong
+  // Try to auto-repair the Instagram Business Account ID
   let igId = igAccount.account_id;
-  if (!igId.startsWith('178414')) {
-    const resolvedId = await resolveIgBusinessAccountId(effectiveToken);
-    if (resolvedId && resolvedId !== igId) {
-      await supabase.from('social_accounts').update({ account_id: resolvedId }).eq('user_id', userId).eq('platform', 'Instagram');
-      igId = resolvedId;
+
+  // Test if the token works with graph.facebook.com at all
+  try {
+    const testRes = await fetch(`${FB_API}/me/instagram_business_account?fields=id,username&access_token=${effectiveToken}`);
+    const testData = await testRes.json();
+    console.log('[Publisher] IG /me/instagram_business_account:', JSON.stringify(testData).slice(0, 500));
+    if (testRes.ok && testData.id) {
+      igId = testData.id;
+      await supabase.from('social_accounts').update({ account_id: igId }).eq('user_id', userId).eq('platform', 'Instagram');
+      console.log('[Publisher] Auto-repaired IG account_id to:', igId);
+    } else {
+      console.log('[Publisher] /me/instagram_business_account failed:', testData?.error?.message || 'unknown');
+      // Try /me/accounts as fallback
+      const pagesRes = await fetch(`${FB_API}/me/accounts?fields=instagram_business_account{id},name&access_token=${effectiveToken}`);
+      const pagesData = await pagesRes.json();
+      console.log('[Publisher] IG /me/accounts:', JSON.stringify(pagesData).slice(0, 500));
+      if (pagesRes.ok && pagesData.data) {
+        for (const page of pagesData.data) {
+          if (page.instagram_business_account?.id) {
+            igId = page.instagram_business_account.id;
+            await supabase.from('social_accounts').update({ account_id: igId }).eq('user_id', userId).eq('platform', 'Instagram');
+            console.log('[Publisher] Auto-repaired IG account_id via /me/accounts to:', igId);
+            break;
+          }
+        }
+      }
     }
+  } catch (err) {
+    console.error('[Publisher] IG auto-repair error:', err);
   }
 
   try {
