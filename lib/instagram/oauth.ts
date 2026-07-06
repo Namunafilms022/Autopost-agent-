@@ -77,26 +77,23 @@ export async function exchangeCode(
 export async function exchangeForLongLivedToken(
   shortToken: string,
 ): Promise<{ access_token: string; expires_in: number }> {
-  const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
 
   addLog('long-lived', 'Exchanging for long-lived token', {
     shortTokenLength: shortToken.length,
-    clientId: clientId?.slice(0, 6) + '...',
     clientSecretSet: !!clientSecret,
   });
 
-  const url = new URL('https://graph.facebook.com/v22.0/oauth/access_token');
-  url.searchParams.set('grant_type', 'fb_exchange_token');
-  url.searchParams.set('client_id', clientId);
+  const url = new URL('https://graph.instagram.com/access_token');
+  url.searchParams.set('grant_type', 'ig_exchange_token');
   url.searchParams.set('client_secret', clientSecret);
-  url.searchParams.set('fb_exchange_token', shortToken);
+  url.searchParams.set('access_token', shortToken);
 
   const res = await fetch(url.toString());
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     addLog('long-lived', `FAILED: Long-lived exchange returned ${res.status}`, { response: text });
-    throw new Error(`Long-lived token exchange failed (${res.status}): ${text}`);
+    throw new Error(`Instagram long-lived token exchange failed (${res.status}): ${text}`);
   }
 
   const data = await res.json();
