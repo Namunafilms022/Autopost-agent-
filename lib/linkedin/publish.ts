@@ -47,17 +47,21 @@ async function initializeImageUpload(
     }),
   });
 
-  const body = await res.json() as {
-    value?: { uploadUrl?: string; image?: string };
-    message?: string;
-    serviceErrorCode?: number;
-  };
+  let body: Record<string, unknown>;
+  try {
+    body = await res.json();
+  } catch {
+    const text = await res.text().catch(() => '');
+    throw new Error(`LinkedIn image init failed: empty response (${res.status}) - ${text.slice(0, 200)}`);
+  }
 
-  if (!res.ok || !body.value?.uploadUrl || !body.value?.image) {
+  const val = body.value as { uploadUrl?: string; image?: string } | undefined;
+
+  if (!res.ok || !val?.uploadUrl || !val?.image) {
     throw new Error(`LinkedIn image init failed: ${parseError(body)}`);
   }
 
-  return { uploadUrl: body.value.uploadUrl, imageUrn: body.value.image };
+  return { uploadUrl: val.uploadUrl, imageUrn: val.image };
 }
 
 async function uploadImageBinary(uploadUrl: string, imageData: ArrayBuffer): Promise<void> {
@@ -110,13 +114,19 @@ async function createPost(
     body: JSON.stringify(body),
   });
 
-  const data = await res.json() as { id?: string; message?: string; serviceErrorCode?: number };
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    const text = await res.text().catch(() => '');
+    throw new Error(`LinkedIn post creation failed: empty response (${res.status}) - ${text.slice(0, 200)}`);
+  }
 
   if (!res.ok || !data.id) {
     throw new Error(`LinkedIn post creation failed: ${parseError(data)}`);
   }
 
-  return data.id;
+  return data.id as string;
 }
 
 export async function publishToLinkedin(

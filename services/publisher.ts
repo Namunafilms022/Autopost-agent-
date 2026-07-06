@@ -89,6 +89,26 @@ async function publishToFacebook(
   }
 }
 
+async function resolveIgBusinessAccountId(token: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${FB_API}/me/instagram_business_account?fields=id,username&access_token=${token}`);
+    const data = await res.json() as { id?: string; error?: { message: string } };
+    if (res.ok && data.id) return data.id;
+  } catch { /* ignore */ }
+
+  try {
+    const res = await fetch(`${FB_API}/me/accounts?fields=instagram_business_account{id},name&access_token=${token}`);
+    const data = await res.json() as { data?: Array<{ instagram_business_account?: { id: string } }> };
+    if (res.ok && data.data) {
+      for (const page of data.data) {
+        if (page.instagram_business_account?.id) return page.instagram_business_account.id;
+      }
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
 async function publishToInstagram(
   caption: string,
   imageUrl: string | null,
@@ -123,7 +143,7 @@ async function publishToInstagram(
     }
   }
 
-  // Fallback: try using the Facebook User Token (which works with graph.facebook.com)
+  // Fallback: try using the Facebook User Token
   const { data: fbAccount } = await supabase
     .from('social_accounts')
     .select('access_token')
@@ -132,16 +152,27 @@ async function publishToInstagram(
     .eq('status', 'connected')
     .single();
 
-  if (fbAccount?.access_token) {
-    try {
-      const result = await publishMedia(igAccount.account_id, caption, imageUrl, fbAccount.access_token);
-      return { success: true, platform_response: result as unknown as Record<string, unknown> };
-    } catch (err) {
-      return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  const effectiveToken = fbAccount?.access_token || igAccount?.access_token;
+  if (!effectiveToken) {
+    return { success: false, error_message: 'No access token available for Instagram publishing' };
+  }
+
+  // Try to auto-repair the Instagram Business Account ID if the stored one looks wrong
+  let igId = igAccount.account_id;
+  if (!igId.startsWith('178414')) {
+    const resolvedId = await resolveIgBusinessAccountId(effectiveToken);
+    if (resolvedId && resolvedId !== igId) {
+      await supabase.from('social_accounts').update({ account_id: resolvedId }).eq('user_id', userId).eq('platform', 'Instagram');
+      igId = resolvedId;
     }
   }
 
-  return { success: false, error_message: 'Instagram token failed and no connected Facebook account found as fallback' };
+  try {
+    const result = await publishMedia(igId, caption, imageUrl, effectiveToken);
+    return { success: true, platform_response: result as unknown as Record<string, unknown> };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 async function getConnectedAccount(
