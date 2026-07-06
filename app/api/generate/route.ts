@@ -137,11 +137,10 @@ async function callAI(
     };
   }
 
-  if (!caption || !hashtags || !imagePrompt) {
+  if (!caption || !hashtags) {
     const missing: string[] = [];
     if (!caption) missing.push('caption');
     if (!hashtags) missing.push('hashtags');
-    if (!imagePrompt) missing.push('imagePrompt/image_prompt');
     throw new Error(`AI response missing: ${missing.join(', ')}. Try rephrasing your topic.`);
   }
 
