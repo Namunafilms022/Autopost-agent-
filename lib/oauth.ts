@@ -14,7 +14,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
     clientIdEnv: 'FACEBOOK_CLIENT_ID',
     clientSecretEnv: 'FACEBOOK_CLIENT_SECRET',
-    scope: 'pages_read_engagement,pages_manage_posts',
+    scope: 'pages_show_list,pages_read_engagement',
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: undefined,
