@@ -58,7 +58,19 @@ export async function GET(req: NextRequest) {
     return redirectToSocial(`Token exchange failed: ${msg}`);
   }
 
-  // --- Stage 2: Resolve Instagram Account ---
+  // --- Stage 2: Exchange for long-lived Facebook Graph token ---
+  try {
+    const longLived = await exchangeForLongLivedToken(token);
+    token = longLived.access_token;
+    expiresIn = longLived.expires_in;
+    addLog('long-lived', 'Short-lived token exchanged for long-lived Facebook Graph token');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown';
+    addLog('long-lived-failed', `Long-lived exchange failed, using short-lived token: ${msg}`);
+    // Continue with short-lived token (will expire in 1 hour)
+  }
+
+  // --- Stage 3: Resolve Instagram Account ---
   // Try to get the IG account info from API, fall back to direct user_id from token exchange
   let pageId = igUserId;
   let pageName = `Instagram ${igUserId}`;
@@ -80,7 +92,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // --- Stage 3: Database Update ---
+  // --- Stage 4: Database Update ---
   const userId = state?.split(':')[0];
   if (!userId) {
     return redirectToSocial('Invalid state parameter');
