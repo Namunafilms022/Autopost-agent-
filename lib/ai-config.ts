@@ -34,37 +34,49 @@ async function callGoogleAI(messages: { role: string; content: string }[], maxTo
   const body = buildGoogleContents(messages);
   body.generationConfig = { maxOutputTokens: maxTokens, temperature };
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const res = await fetch(
-      `${GOOGLE_API_BASE}/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      },
-    );
+      const res = await fetch(
+        `${GOOGLE_API_BASE}/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        },
+      );
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.warn(`Google AI error (${res.status}): ${body.slice(0, 200)}`);
+      if (res.status === 429) {
+        const wait = (attempt + 1) * 2000;
+        console.warn(`Google AI rate limited (429), retrying in ${wait}ms (attempt ${attempt + 1}/3)`);
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.warn(`Google AI error (${res.status}): ${body.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+
       return null;
+    } catch (err) {
+      console.warn('Google AI call failed:', err instanceof Error ? err.message : err);
+      if (attempt === 2) return null;
+      await new Promise((r) => setTimeout(r, 1000));
     }
-
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (text) return text;
-
-    return null;
-  } catch (err) {
-    console.warn('Google AI call failed:', err instanceof Error ? err.message : err);
-    return null;
   }
+
+  return null;
 }
 
 async function callOpenRouterFree(messages: { role: string; content: string }[], maxTokens: number, temperature: number): Promise<string | null> {
@@ -123,7 +135,11 @@ async function callPollinationsText(prompt: string): Promise<string | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const res = await fetch(`${POLLINATIONS_TEXT}/${encodeURIComponent(prompt.slice(0, 2000))}`, {
+    const body = { messages: [{ role: 'user', content: prompt }] };
+    const res = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
