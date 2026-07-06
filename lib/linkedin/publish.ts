@@ -36,7 +36,7 @@ async function initializeImageUpload(
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'LinkedIn-Version': '202412',
+      'LinkedIn-Version': '202606',
       'X-Restli-Protocol-Version': '2.0.0',
       'Content-Type': 'application/json',
     },
@@ -103,7 +103,7 @@ async function createPost(
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'LinkedIn-Version': '202412',
+      'LinkedIn-Version': '202606',
       'X-Restli-Protocol-Version': '2.0.0',
       'Content-Type': 'application/json',
     },
