@@ -30,25 +30,42 @@ export async function resolveInstagramBusinessAccount(
   accessToken: string,
 ): Promise<{ igId: string; pageId: string; pageName: string; pageAccessToken: string }> {
   const url = `${FB_API}/me/accounts?fields=instagram_business_account{id},name,id,access_token&access_token=${accessToken}`;
+  console.log('[Instagram Resolve] Fetching Pages:', url.replace(accessToken, 'TOKEN_REDACTED'));
+
   const res = await fetch(url);
   const body = await res.json() as { data?: Array<{ id: string; name: string; access_token?: string; instagram_business_account?: { id: string } }>; error?: IgError };
 
+  console.log('[Instagram Resolve] Response status:', res.status);
+  console.log('[Instagram Resolve] Response body:', JSON.stringify(body, null, 2).slice(0, 2000));
+
   if (!res.ok || body.error) {
-    throw new Error(`Failed to fetch Pages: ${parseError(body.error || body)}`);
+    const errMsg = `Failed to fetch Pages: ${parseError(body.error || body)}`;
+    console.error('[Instagram Resolve] Error:', errMsg);
+    throw new Error(errMsg);
   }
 
-  for (const page of body.data ?? []) {
+  const pages = body.data ?? [];
+  console.log('[Instagram Resolve] Pages found:', pages.length);
+  for (const page of pages) {
+    console.log('[Instagram Resolve] Page:', { id: page.id, name: page.name, hasIg: !!page.instagram_business_account, igId: page.instagram_business_account?.id });
+  }
+
+  for (const page of pages) {
     if (page.instagram_business_account) {
-      return {
+      const result = {
         igId: page.instagram_business_account.id,
         pageId: page.id,
         pageName: page.name,
         pageAccessToken: page.access_token || accessToken,
       };
+      console.log('[Instagram Resolve] Found Instagram account:', result);
+      return result;
     }
   }
 
-  throw new Error('No Facebook Page linked to an Instagram Business account.');
+  const errMsg = 'No Facebook Page linked to an Instagram Business account.';
+  console.error('[Instagram Resolve]', errMsg);
+  throw new Error(errMsg);
 }
 
 export async function createMediaContainer(

@@ -1,7 +1,11 @@
+import { addLog } from '@/lib/oauth-log';
+
 export function getAuthorizationUrl(state: string): string {
   const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
+
+  addLog('auth-url', 'Building auth URL', { clientId: clientId?.slice(0, 6) + '...', baseUrl, redirectUri, state: state.slice(0, 20) + '...' });
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -11,7 +15,9 @@ export function getAuthorizationUrl(state: string): string {
     state,
   });
 
-  return `https://www.facebook.com/v22.0/dialog/oauth?${params}`;
+  const url = `https://www.facebook.com/v22.0/dialog/oauth?${params}`;
+  addLog('auth-url', 'Generated Facebook OAuth URL', { url: url.slice(0, 100) + '...' });
+  return url;
 }
 
 export async function exchangeCode(
@@ -21,6 +27,13 @@ export async function exchangeCode(
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
+
+  addLog('exchange-code', 'Exchanging code for token', {
+    clientId: clientId?.slice(0, 6) + '...',
+    clientSecretSet: !!clientSecret,
+    codeLength: code.length,
+    redirectUri,
+  });
 
   const body = new URLSearchParams({
     client_id: clientId,
@@ -38,10 +51,15 @@ export async function exchangeCode(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    addLog('exchange-code', `FAILED: Token exchange returned ${res.status}`, { response: text });
     throw new Error(`Token exchange failed (${res.status}): ${text}`);
   }
 
   const data = await res.json() as { access_token: string; expires_in?: number };
+  addLog('exchange-code', 'Token exchange successful', {
+    tokenLength: data.access_token?.length,
+    expires_in: data.expires_in,
+  });
 
   return { access_token: data.access_token, expires_in: data.expires_in };
 }
@@ -52,6 +70,12 @@ export async function exchangeForLongLivedToken(
   const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
 
+  addLog('long-lived', 'Exchanging for long-lived token', {
+    shortTokenLength: shortToken.length,
+    clientId: clientId?.slice(0, 6) + '...',
+    clientSecretSet: !!clientSecret,
+  });
+
   const url = new URL('https://graph.facebook.com/v22.0/oauth/access_token');
   url.searchParams.set('grant_type', 'fb_exchange_token');
   url.searchParams.set('client_id', clientId);
@@ -61,8 +85,15 @@ export async function exchangeForLongLivedToken(
   const res = await fetch(url.toString());
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    addLog('long-lived', `FAILED: Long-lived exchange returned ${res.status}`, { response: text });
     throw new Error(`Long-lived token exchange failed (${res.status}): ${text}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  addLog('long-lived', 'Long-lived token obtained', {
+    tokenLength: data.access_token?.length,
+    expires_in: data.expires_in,
+  });
+
+  return data;
 }
