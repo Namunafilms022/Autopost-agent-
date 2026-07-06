@@ -25,6 +25,70 @@ function getServiceClient() {
   });
 }
 
+const FB_API = 'https://graph.facebook.com/v22.0';
+
+async function publishToFacebook(
+  caption: string,
+  imageUrl: string | null,
+  userId: string,
+): Promise<PublishResult> {
+  const supabase = getServiceClient();
+
+  const { data: account } = await supabase
+    .from('social_accounts')
+    .select('access_token, account_id')
+    .eq('user_id', userId)
+    .eq('platform', 'Facebook')
+    .eq('status', 'connected')
+    .single();
+
+  if (!account?.access_token) {
+    return { success: false, error_message: 'No connected Facebook account found' };
+  }
+
+  try {
+    // Get the first page the user manages
+    const pagesRes = await fetch(`${FB_API}/me/accounts?fields=id,name,access_token&access_token=${account.access_token}`);
+    const pages = await pagesRes.json() as { data?: Array<{ id: string; name: string; access_token: string }> };
+
+    if (!pages.data || pages.data.length === 0) {
+      return { success: false, error_message: 'No Facebook pages found to post to. Create a Facebook Page first.' };
+    }
+
+    const page = pages.data[0];
+    let postResult: { id?: string };
+
+    if (imageUrl) {
+      const body = new URLSearchParams({
+        url: imageUrl,
+        message: caption,
+        access_token: page.access_token,
+      });
+      const res = await fetch(`${FB_API}/${page.id}/photos`, { method: 'POST', body });
+      postResult = await res.json() as { id?: string; error?: { message: string } };
+      if (!res.ok || !postResult.id) {
+        const err = (postResult as { error?: { message: string } }).error;
+        throw new Error(err?.message || JSON.stringify(postResult));
+      }
+    } else {
+      const body = new URLSearchParams({
+        message: caption,
+        access_token: page.access_token,
+      });
+      const res = await fetch(`${FB_API}/${page.id}/feed`, { method: 'POST', body });
+      postResult = await res.json() as { id?: string; error?: { message: string } };
+      if (!res.ok || !postResult.id) {
+        const err = (postResult as { error?: { message: string } }).error;
+        throw new Error(err?.message || JSON.stringify(postResult));
+      }
+    }
+
+    return { success: true, platform_response: { pageId: page.id, pageName: page.name, postId: postResult.id } };
+  } catch (err) {
+    return { success: false, error_message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function publishToInstagram(
   caption: string,
   imageUrl: string | null,
@@ -106,6 +170,14 @@ async function getConnectedAccount(
   }
 
   return { access_token: account.access_token, account_id: account.account_id };
+}
+
+async function publishToFacebookPlatform(
+  caption: string,
+  imageUrl: string | null,
+  userId: string,
+): Promise<PublishResult> {
+  return publishToFacebook(caption, imageUrl, userId);
 }
 
 async function publishToLinkedinPlatform(
@@ -243,6 +315,9 @@ export async function publishQueueItem(
         break;
       case 'TikTok':
         result = await publishToTikTokPlatform(caption, imageUrl, item.user_id);
+        break;
+      case 'Facebook':
+        result = await publishToFacebookPlatform(caption, imageUrl, item.user_id);
         break;
       case 'YouTube':
         result = await publishToYouTubePlatform(caption, imageUrl, item.user_id, item.title);
