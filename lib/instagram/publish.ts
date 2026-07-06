@@ -1,3 +1,5 @@
+import { addLog } from '@/lib/oauth-log';
+
 const FB_API = 'https://graph.facebook.com/v22.0';
 
 interface IgError {
@@ -30,24 +32,27 @@ export async function resolveInstagramBusinessAccount(
   accessToken: string,
 ): Promise<{ igId: string; pageId: string; pageName: string; pageAccessToken: string }> {
   const url = `${FB_API}/me/accounts?fields=instagram_business_account{id},name,id,access_token&access_token=${accessToken}`;
-  console.log('[Instagram Resolve] Fetching Pages:', url.replace(accessToken, 'TOKEN_REDACTED'));
+  addLog('graph-request', 'Fetching /me/accounts', { url: url.replace(accessToken, 'TOKEN_REDACTED') });
 
   const res = await fetch(url);
-  const body = await res.json() as { data?: Array<{ id: string; name: string; access_token?: string; instagram_business_account?: { id: string } }>; error?: IgError };
+  const body = await res.json();
 
-  console.log('[Instagram Resolve] Response status:', res.status);
-  console.log('[Instagram Resolve] Response body:', JSON.stringify(body, null, 2).slice(0, 2000));
+  addLog('graph-response', `/me/accounts response status=${res.status}`, { body: JSON.stringify(body).slice(0, 3000) });
 
   if (!res.ok || body.error) {
     const errMsg = `Failed to fetch Pages: ${parseError(body.error || body)}`;
-    console.error('[Instagram Resolve] Error:', errMsg);
+    addLog('graph-error', errMsg, { status: res.status });
     throw new Error(errMsg);
   }
 
   const pages = body.data ?? [];
-  console.log('[Instagram Resolve] Pages found:', pages.length);
-  for (const page of pages) {
-    console.log('[Instagram Resolve] Page:', { id: page.id, name: page.name, hasIg: !!page.instagram_business_account, igId: page.instagram_business_account?.id });
+  addLog('graph-pages', `Found ${pages.length} pages`, {
+    pages: pages.map((p: Record<string, unknown>) => ({ id: p.id, name: p.name, hasIg: !!p.instagram_business_account, igId: (p.instagram_business_account as Record<string, unknown> | undefined)?.id })),
+  });
+
+  if (pages.length === 0) {
+    addLog('graph-no-pages', 'No pages returned from /me/accounts');
+    throw new Error('No Facebook Pages found. The token may lack pages_show_list permission.');
   }
 
   for (const page of pages) {
@@ -58,14 +63,13 @@ export async function resolveInstagramBusinessAccount(
         pageName: page.name,
         pageAccessToken: page.access_token || accessToken,
       };
-      console.log('[Instagram Resolve] Found Instagram account:', result);
+      addLog('graph-found', 'Found Instagram Business Account', result);
       return result;
     }
   }
 
-  const errMsg = 'No Facebook Page linked to an Instagram Business account.';
-  console.error('[Instagram Resolve]', errMsg);
-  throw new Error(errMsg);
+  addLog('graph-no-ig', 'No page has instagram_business_account field');
+  throw new Error('No Facebook Page linked to an Instagram Business account. Please connect your Instagram account to a Facebook Page in Meta Business Suite (https://business.facebook.com).');
 }
 
 export async function createMediaContainer(
