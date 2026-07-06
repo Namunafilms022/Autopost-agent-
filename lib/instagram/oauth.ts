@@ -22,7 +22,7 @@ export function getAuthorizationUrl(state: string): string {
 
 export async function exchangeCode(
   code: string,
-): Promise<{ access_token: string; user_id: string; permissions?: string[] }> {
+): Promise<{ access_token: string; user_id: string; expires_in?: number; permissions?: string[] }> {
   const clientId = process.env.INSTAGRAM_CLIENT_ID!;
   const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET!;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
@@ -71,6 +71,7 @@ export async function exchangeCode(
   return {
     access_token: data.access_token,
     user_id: data.user_id,
+    expires_in: data.expires_in,
     permissions: data.permissions,
   };
 }
