@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { tryParseJson } from '@/lib/json-utils';
-import type { QueueItem, QueueItemInput } from '@/types/queue';
+import type { QueueItem, QueueItemInput, QueueItemUpdate } from '@/types/queue';
 
 export async function getQueueItems(): Promise<QueueItem[]> {
   const { data, error } = await supabase
@@ -39,7 +39,7 @@ export async function createQueueItem(item: QueueItemInput): Promise<QueueItem> 
 
 export async function updateQueueItem(
   id: string,
-  item: Partial<QueueItemInput>,
+  item: QueueItemUpdate,
 ): Promise<QueueItem> {
   const { data, error } = await supabase
     .from('queue_items')

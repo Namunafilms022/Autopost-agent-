@@ -106,51 +106,36 @@ async function callAI(
     { maxTokens: 1024, temperature: 0.8 },
   );
 
-  const { data: parsed, error: parseError } = tryParseJson<any>(content);
-  if (parseError) {
-    console.error('[Generate] AI raw response:', content);
-    throw new Error(`Failed to parse AI response. The AI returned an unexpected format. Try rephrasing your topic.`);
+  const { data: parsed } = tryParseJson<any>(content);
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Generate] AI raw:', content.slice(0, 300));
+    if (parsed) console.log('[Generate] parsed:', JSON.stringify(parsed).slice(0, 300));
   }
 
-  if (process.env.NODE_ENV === 'development' || Math.random() < 0.1) {
-    console.log('[Generate] AI response parsed:', JSON.stringify(parsed).slice(0, 500));
-  }
-
-  const caption = normalizeField(parsed, 'caption', 'Caption');
-  const hashtags = normalizeField(parsed, 'hashtags', 'hashtags', 'Hashtags');
-  const imagePrompt = normalizeField(parsed, 'imagePrompt', 'image_prompt', 'ImagePrompt', 'image_prompt');
-  const title = normalizeField(parsed, 'title', 'Title');
+  const caption = normalizeField(parsed ?? {}, 'caption', 'Caption');
+  const hashtags = normalizeField(parsed ?? {}, 'hashtags', 'hashtags', 'Hashtags');
+  const imagePrompt = normalizeField(parsed ?? {}, 'imagePrompt', 'image_prompt', 'ImagePrompt', 'image_prompt');
+  const title = normalizeField(parsed ?? {}, 'title', 'Title');
 
   if (contentSource === 'asset') {
-    if (!caption || !hashtags || !title) {
-      const missing: string[] = [];
-      if (!caption) missing.push('caption');
-      if (!hashtags) missing.push('hashtags');
-      if (!title) missing.push('title');
-      throw new Error(`AI response missing: ${missing.join(', ')}. Try rephrasing your topic.`);
-    }
     return {
-      caption: caption.slice(0, platform.captionLimit),
-      hashtags,
-      title,
+      caption: (caption || defaultCaption).slice(0, platform.captionLimit),
+      hashtags: hashtags || '',
+      title: title || caption || 'Untitled',
       imagePrompt: null,
     };
   }
 
-  if (!caption || !hashtags) {
-    const missing: string[] = [];
-    if (!caption) missing.push('caption');
-    if (!hashtags) missing.push('hashtags');
-    throw new Error(`AI response missing: ${missing.join(', ')}. Try rephrasing your topic.`);
-  }
-
   return {
-    caption: caption.slice(0, platform.captionLimit),
-    hashtags,
+    caption: (caption || defaultCaption).slice(0, platform.captionLimit),
+    hashtags: hashtags || '',
     imagePrompt,
     title: null,
   };
 }
+
+const defaultCaption = 'Check out this content!';
 
 export async function POST(req: Request) {
   try {

@@ -258,15 +258,20 @@ export async function createMediaContainer(
 
   const params = new URLSearchParams({ image_url: imageUrl, caption, access_token: accessToken });
   const res = await fetch(endpoint, { method: 'POST', body: params });
-  const body = await res.json() as { id?: string; error?: IgError };
+  const createText = await res.text();
+  let createBody: Record<string, unknown>;
+  try { createBody = JSON.parse(createText); } catch {
+    throw new Error(`IG createMedia failed (${res.status}): ${createText.slice(0, 200)}`);
+  }
+  const cb = createBody as { id?: string; error?: IgError };
 
-  console.error(`[IG] createMedia status=${res.status} id=${body.id} err=${body.error?.message?.slice(0, 80)}`);
+  console.error(`[IG] createMedia status=${res.status} id=${cb.id} err=${cb.error?.message?.slice(0, 80)}`);
 
-  if (!res.ok || !body.id) {
-    throw new Error(parseError(body.error || body));
+  if (!res.ok || !cb.id) {
+    throw new Error(parseError(cb.error || cb));
   }
 
-  return body.id;
+  return cb.id;
 }
 
 export async function getMediaContainerStatus(
@@ -277,15 +282,20 @@ export async function getMediaContainerStatus(
   console.error(`[IG] getStatus id=${containerId}`);
 
   const res = await fetch(url);
-  const body = await res.json() as { status?: string; status_code?: string; error?: IgError };
+  const statusText = await res.text();
+  let statusBody: Record<string, unknown>;
+  try { statusBody = JSON.parse(statusText); } catch {
+    throw new Error(`IG getStatus failed (${res.status}): ${statusText.slice(0, 200)}`);
+  }
+  const sb = statusBody as { status?: string; status_code?: string; error?: IgError };
 
-  console.error(`[IG] getStatus status=${res.status} state=${body.status} err=${(body.error?.message || '').slice(0, 60)}`);
+  console.error(`[IG] getStatus status=${res.status} state=${sb.status} err=${(sb.error?.message || '').slice(0, 60)}`);
 
-  if (!res.ok || body.error) {
-    throw new Error(parseError(body.error || body));
+  if (!res.ok || sb.error) {
+    throw new Error(parseError(sb.error || sb));
   }
 
-  return { status: body.status ?? 'UNKNOWN', status_code: body.status_code };
+  return { status: sb.status ?? 'UNKNOWN', status_code: sb.status_code };
 }
 
 export async function publishMediaContainer(
@@ -298,15 +308,20 @@ export async function publishMediaContainer(
 
   const params = new URLSearchParams({ creation_id: containerId, access_token: accessToken });
   const res = await fetch(endpoint, { method: 'POST', body: params });
-  const body = await res.json() as { id?: string; error?: IgError };
+  const pubText = await res.text();
+  let pubBody: Record<string, unknown>;
+  try { pubBody = JSON.parse(pubText); } catch {
+    throw new Error(`IG publishContainer failed (${res.status}): ${pubText.slice(0, 200)}`);
+  }
+  const pb = pubBody as { id?: string; error?: IgError };
 
-  console.error(`[IG] publishContainer status=${res.status} id=${body.id} err=${(body.error?.message || '').slice(0, 60)}`);
+  console.error(`[IG] publishContainer status=${res.status} id=${pb.id} err=${(pb.error?.message || '').slice(0, 60)}`);
 
-  if (!res.ok || !body.id) {
-    throw new Error(parseError(body.error || body));
+  if (!res.ok || !pb.id) {
+    throw new Error(parseError(pb.error || pb));
   }
 
-  return body.id;
+  return pb.id;
 }
 
 export async function publishMedia(
@@ -320,16 +335,18 @@ export async function publishMedia(
   console.error(`[IG] publishMedia id=${igUserId} type=${idType} tok=${tokenType} img=${imageUrl.slice(0, 60)}`);
   const containerId = await createMediaContainer(igUserId, imageUrl, caption, accessToken);
 
-  const maxAttempts = 10;
+  const maxAttempts = 15;
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 2000));
-    const { status } = await getMediaContainerStatus(containerId, accessToken);
-    if (status === 'FINISHED') break;
-    if (status === 'ERROR') {
+    const { status, status_code } = await getMediaContainerStatus(containerId, accessToken);
+    const isFinished = status === 'FINISHED' || status_code === 'FINISHED' || /Finished/i.test(status);
+    const isError = status === 'ERROR' || status_code === 'ERROR';
+    if (isFinished) break;
+    if (isError) {
       throw new Error('Media container failed to process');
     }
     if (i === maxAttempts - 1) {
-      throw new Error(`Media container not ready after ${maxAttempts * 2}s (status: ${status})`);
+      throw new Error(`Media container not ready after ${maxAttempts * 2}s (status: ${status}, status_code: ${status_code})`);
     }
   }
 

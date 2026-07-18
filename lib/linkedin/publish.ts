@@ -114,19 +114,24 @@ async function createPost(
     body: JSON.stringify(body),
   });
 
+  const location = res.headers.get('x-restli-id') || res.headers.get('id') || '';
+  if (res.ok && location) {
+    return location;
+  }
+
+  if (res.status === 201) {
+    return 'linkedin_post_created';
+  }
+
   let data: Record<string, unknown>;
   try {
     data = await res.json();
   } catch {
     const text = await res.text().catch(() => '');
-    throw new Error(`LinkedIn post creation failed: empty response (${res.status}) - ${text.slice(0, 200)}`);
+    throw new Error(`LinkedIn post creation failed: (${res.status}) - ${text.slice(0, 200)}`);
   }
 
-  if (!res.ok || !data.id) {
-    throw new Error(`LinkedIn post creation failed: ${parseError(data)}`);
-  }
-
-  return data.id as string;
+  throw new Error(`LinkedIn post creation failed: ${parseError(data)}`);
 }
 
 export async function publishToLinkedin(

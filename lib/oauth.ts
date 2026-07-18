@@ -4,6 +4,7 @@ export interface OAuthConfig {
   clientIdEnv: string;
   clientSecretEnv: string;
   scope: string;
+  clientIdParam?: string;
   parseTokenResponse: (data: Record<string, unknown>) => { access_token: string; refresh_token?: string; expires_in?: number };
   extraParams?: Record<string, string>;
 }
@@ -14,7 +15,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
     clientIdEnv: 'FACEBOOK_CLIENT_ID',
     clientSecretEnv: 'FACEBOOK_CLIENT_SECRET',
-    scope: 'pages_show_list,pages_read_engagement',
+    scope: 'pages_show_list,pages_read_engagement,pages_manage_posts',
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: undefined,
@@ -52,6 +53,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     clientIdEnv: 'TIKTOK_CLIENT_ID',
     clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
     scope: 'user.info.basic,video.publish,video.upload',
+    clientIdParam: 'client_key',
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: data.refresh_token as string | undefined,
@@ -63,7 +65,7 @@ export const PLATFORM_OAUTH: Record<string, OAuthConfig> = {
     tokenUrl: 'https://oauth2.googleapis.com/token',
     clientIdEnv: 'YOUTUBE_CLIENT_ID',
     clientSecretEnv: 'YOUTUBE_CLIENT_SECRET',
-    scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.upload',
+    scope: 'https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.upload',
     parseTokenResponse: (data: Record<string, unknown>) => ({
       access_token: data.access_token as string,
       refresh_token: data.refresh_token as string | undefined,
@@ -92,8 +94,9 @@ export function buildOAuthUrl(platform: string): string | null {
   const redirectUri = `${getBaseUrl()}/api/auth/${platform.toLowerCase()}/callback`;
   const state = crypto.randomUUID();
 
+  const clientIdKey = config.clientIdParam || 'client_id';
   const params = new URLSearchParams({
-    client_id: clientId,
+    [clientIdKey]: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: config.scope,

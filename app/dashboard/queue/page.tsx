@@ -6,10 +6,16 @@ import {
   FileText,
   SendHorizonal,
   RotateCcw,
+  ListRestart,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,14 +58,31 @@ import {
   updateQueueItem,
   submitForApproval,
 } from '@/services/queue';
-import type { QueueItem, QueueStatus } from '@/types/queue';
-import { STATUS_LABELS, STATUS_COLORS } from '@/types/queue';
+import type { QueueItem, QueueStatus, PlatformState, PlatformStatus } from '@/types/queue';
+import { STATUS_LABELS, STATUS_COLORS, PLATFORM_STATUS_LABELS, PLATFORM_STATUS_COLORS } from '@/types/queue';
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+}
+
+const PLATFORMS_LIST = ['Instagram', 'Facebook', 'LinkedIn', 'X', 'TikTok', 'YouTube'] as const;
+
+function PlatformStatusIndicator({ platform, state }: { platform: string; state?: PlatformState }) {
+  if (!state) {
+    return <span className="text-xs text-slate-500">—</span>;
+  }
+  const color = PLATFORM_STATUS_COLORS[state.status];
+  return (
+    <span className={`text-xs font-medium ${color}`}>
+      {PLATFORM_STATUS_LABELS[state.status]}
+      {state.status === 'failed' && state.retry_count > 0 && (
+        <span className="ml-1 text-[10px] text-muted-foreground">({state.retry_count}/3)</span>
+      )}
+    </span>
+  );
 }
 
 export default function QueuePage() {
@@ -87,9 +110,38 @@ export default function QueuePage() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [viewItem, setViewItem] = useState<QueueItem | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [publishLogs, setPublishLogs] = useState<Record<string, any[]>>({});
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const loadedRef = useRef(false);
 
-  const validEditStatuses: QueueStatus[] = ['draft', 'pending_approval', 'approved', 'rejected', 'scheduled', 'posted', 'failed'];
+  const filteredItems = useMemo(() => {
+    let result = items;
+    if (statusFilter !== 'all') {
+      result = result.filter(i => i.status === statusFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(i =>
+        (i.caption?.toLowerCase().includes(q)) ||
+        (i.platform?.toLowerCase().includes(q)) ||
+        (i.status?.toLowerCase().includes(q)) ||
+        (new Date(i.scheduled_time).toLocaleDateString().toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [items, statusFilter, searchQuery]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: items.length };
+    for (const item of items) {
+      counts[item.status] = (counts[item.status] || 0) + 1;
+    }
+    return counts;
+  }, [items]);
+
+  const validEditStatuses: QueueStatus[] = ['draft', 'pending_approval', 'approved', 'queued', 'published', 'failed', 'partially_published'];
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -114,19 +166,24 @@ export default function QueuePage() {
   };
 
   const handleRetry = async (id: string) => {
+    setRetrying(id);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       const res = await fetch('/api/queue/retry', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
         body: JSON.stringify({ queueItemId: id }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      toast.success(data.message || 'Post queued for retry');
+      toast.success(data.message || 'Retry completed');
       const items = await getQueueItems();
       setItems(items);
     } catch (err: unknown) {
       toast.error(`Failed to retry\n\nReason: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setRetrying(null);
     }
   };
 
@@ -170,6 +227,16 @@ export default function QueuePage() {
     }
   };
 
+  const loadPublishLogs = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/publish-logs?queueItemId=${itemId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPublishLogs(prev => ({ ...prev, [itemId]: data }));
+      }
+    } catch { /* ignore */ }
+  };
+
   const viewPlatform = useMemo(() => viewItem ? getPlatform(viewItem.platform) : undefined, [viewItem]);
 
   return (
@@ -201,11 +268,40 @@ export default function QueuePage() {
               </Link>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {['all', 'queued', 'publishing', 'published', 'partially_published', 'failed', 'draft'].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatusFilter(s)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      statusFilter === s
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {STATUS_LABELS[s as QueueStatus] || s.charAt(0).toUpperCase() + s.slice(1)}
+                    <span className="ml-1 opacity-60">({statusCounts[s] || 0})</span>
+                  </button>
+                ))}
+                <div className="ml-auto">
+                  <Input
+                    placeholder="Search by caption, platform, date..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-8 w-48 text-xs"
+                  />
+                </div>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Showing {filteredItems.length} of {items.length} items
+              </p>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Platform</TableHead>
+                    <TableHead>Platform(s)</TableHead>
                     <TableHead className="hidden sm:table-cell">Caption</TableHead>
                     <TableHead className="hidden md:table-cell">Scheduled</TableHead>
                     <TableHead>Status</TableHead>
@@ -213,19 +309,38 @@ export default function QueuePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => {
+                  {filteredItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                        No items match the current filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredItems.map((item) => {
                     const p = getPlatform(item.platform);
                     const captionLen = item.caption?.length ?? 0;
                     const overLimit = p ? captionLen > p.captionLimit : false;
+                    const platformStates = (item.platforms ?? {}) as Record<string, PlatformState>;
+                    const hasPlatforms = Object.keys(platformStates).length > 0;
                     return (
                       <TableRow key={item.id}>
                         <TableCell className="font-medium">
-                          <div className="flex items-center gap-1.5">
-                            {item.platform}
-                            {p && (
-                              <span className="text-[10px] text-muted-foreground">
-                                {p.captionLimit.toLocaleString()}
-                              </span>
+                          <div className="flex flex-col gap-1">
+                            {hasPlatforms ? (
+                              Object.entries(platformStates).map(([pl, st]) => (
+                                <div key={pl} className="flex items-center gap-1.5">
+                                  <span className="text-sm">{pl}</span>
+                                  <PlatformStatusIndicator platform={pl} state={st} />
+                                </div>
+                              ))
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm">{item.platform}</span>
+                                {p && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {p.captionLimit.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -247,16 +362,13 @@ export default function QueuePage() {
                                 {item.error_message}
                               </span>
                             )}
-                            {item.retry_count > 0 && (
-                              <span className="text-xs text-muted-foreground">({item.retry_count}/3)</span>
-                            )}
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => setViewItem(item)}
+                              onClick={() => { setViewItem(item); loadPublishLogs(item.id); }}
                               className="inline-flex size-8 items-center justify-center rounded-lg hover:bg-muted"
                             >
                               <FileText className="h-4 w-4" />
@@ -271,14 +383,15 @@ export default function QueuePage() {
                                 <SendHorizonal className="h-4 w-4" />
                               </button>
                             )}
-                            {item.status === 'failed' && (item.retry_count ?? 0) < 3 && (
+                            {(item.status === 'failed' || item.status === 'partially_published') && (
                               <button
                                 type="button"
                                 onClick={() => handleRetry(item.id)}
+                                disabled={retrying === item.id}
                                 className="inline-flex size-8 items-center justify-center rounded-lg hover:bg-muted text-orange-500"
-                                title={`Retry (attempt ${(item.retry_count ?? 0) + 1}/3)`}
+                                title="Retry failed platforms"
                               >
-                                <RotateCcw className="h-4 w-4" />
+                                <RotateCcw className={`h-4 w-4 ${retrying === item.id ? 'animate-spin' : ''}`} />
                               </button>
                             )}
                             <button
@@ -303,43 +416,80 @@ export default function QueuePage() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
         </CardContent>
       </Card>
 
       {/* View Dialog */}
       <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Queue Item</DialogTitle>
           </DialogHeader>
           {viewItem && (
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Platform:</span>
-                <span className="font-medium">{viewItem.platform}</span>
+                <span className="text-muted-foreground">Platform(s):</span>
+                <span className="font-medium">{Object.keys(viewItem.platforms ?? {}).length > 0 ? Object.keys(viewItem.platforms ?? {}).join(', ') : viewItem.platform}</span>
                 {viewPlatform && (
                   <Badge variant="outline" className="text-[10px]">
                     {viewPlatform.captionLimit.toLocaleString()} chars max
                   </Badge>
                 )}
               </div>
-              <div>
-                <span className="text-muted-foreground">Scheduled:</span>{' '}
-                <span className="font-medium" suppressHydrationWarning>{formatDate(viewItem.scheduled_time)}</span>
-              </div>
+
+              {/* Per-platform status */}
+              {Object.keys(viewItem.platforms ?? {}).length > 0 && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Per-Platform Status</span>
+                  {Object.entries(viewItem.platforms as Record<string, PlatformState>).map(([platform, state]) => (
+                    <div key={platform} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {state.status === 'published' ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        ) : state.status === 'failed' ? (
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        ) : state.status === 'publishing' ? (
+                          <Clock className="h-4 w-4 text-purple-500" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        )}
+                        <span className="font-medium">{platform}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={PLATFORM_STATUS_COLORS[state.status]}>
+                          {PLATFORM_STATUS_LABELS[state.status]}
+                        </span>
+                        {state.status === 'failed' && (
+                          <span className="text-[10px] text-muted-foreground">({state.retry_count}/3)</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div>
                 <span className="text-muted-foreground">Status:</span>{' '}
                 <Badge variant="outline" className={STATUS_COLORS[viewItem.status]}>
                   {STATUS_LABELS[viewItem.status]}
                 </Badge>
               </div>
+              <div>
+                <span className="text-muted-foreground">Scheduled:</span>{' '}
+                <span className="font-medium" suppressHydrationWarning>{formatDate(viewItem.scheduled_time)}</span>
+              </div>
+              {viewItem.published_at && (
+                <div>
+                  <span className="text-muted-foreground">Published:</span>{' '}
+                  <span className="font-medium" suppressHydrationWarning>{formatDate(viewItem.published_at)}</span>
+                </div>
+              )}
               {viewItem.caption && (
                 <div>
                   <span className="text-muted-foreground">Caption:</span>
-                  <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted p-3">
-                    {viewItem.caption}
-                  </p>
+                  <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted p-3">{viewItem.caption}</p>
                   {viewPlatform && (
                     <p className={`mt-1 text-xs ${viewItem.caption.length > viewPlatform.captionLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
                       {viewItem.caption.length.toLocaleString()} / {viewPlatform.captionLimit.toLocaleString()} characters
@@ -353,12 +503,6 @@ export default function QueuePage() {
                   <p className="mt-1 text-primary">{viewItem.hashtags}</p>
                 </div>
               )}
-              {viewItem.image_prompt && (
-                <div>
-                  <span className="text-muted-foreground">Image Prompt:</span>
-                  <p className="mt-1 text-muted-foreground">{viewItem.image_prompt}</p>
-                </div>
-              )}
               {viewItem.title && (
                 <div>
                   <span className="text-muted-foreground">Title:</span>
@@ -367,15 +511,81 @@ export default function QueuePage() {
               )}
               {viewItem.error_message && (
                 <div>
-                  <span className="text-muted-foreground">Error:</span>
-                  <p className="mt-1 rounded-lg bg-destructive/10 p-2 text-sm text-destructive">
+                  <span className="text-muted-foreground">Errors:</span>
+                  <p className="mt-1 rounded-lg bg-destructive/10 p-2 text-sm text-destructive whitespace-pre-wrap">
                     {viewItem.error_message}
                   </p>
-                  {viewItem.retry_count > 0 && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Retries: {viewItem.retry_count}/3
-                    </p>
-                  )}
+                </div>
+              )}
+
+              {/* Platform-specific errors */}
+              {Object.keys(viewItem.platforms ?? {}).length > 0 && Object.entries(viewItem.platforms as Record<string, PlatformState>).filter(([_, s]) => s.error).length > 0 && (
+                <div>
+                  <span className="text-muted-foreground">Platform Errors:</span>
+                  <div className="mt-1 space-y-1">
+                    {Object.entries(viewItem.platforms as Record<string, PlatformState>).filter(([_, s]) => s.error).map(([pl, s]) => (
+                      <div key={pl} className="rounded bg-red-500/5 p-2 text-xs">
+                        <span className="font-medium text-red-400">{pl}:</span>{' '}
+                        <span className="text-red-300">{s.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Publish Logs */}
+              {publishLogs[viewItem.id] && publishLogs[viewItem.id].length > 0 && (
+                <div>
+                  <span className="text-muted-foreground">Publish Logs:</span>
+                  <div className="mt-1 space-y-2">
+                    {publishLogs[viewItem.id].map((log: any) => (
+                      <div key={log.id} className="rounded border p-3 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{log.platform}</span>
+                            {log.status === 'success' ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                            ) : log.status === 'failed' ? (
+                              <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            ) : (
+                              <Clock className="h-3.5 w-3.5 text-purple-500" />
+                            )}
+                            <span className={log.status === 'success' ? 'text-emerald-400' : log.status === 'failed' ? 'text-red-400' : 'text-purple-400'}>
+                              {log.status}
+                            </span>
+                          </div>
+                          <span className="text-muted-foreground/60">ID: {log.id?.slice(0, 8)}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                          {log.started_at && <div>Started: <span className="text-foreground">{formatDate(log.started_at)}</span></div>}
+                          {log.finished_at && <div>Completed: <span className="text-foreground">{formatDate(log.finished_at)}</span></div>}
+                          {log.duration_ms != null && <div>Duration: <span className="text-foreground">{(log.duration_ms / 1000).toFixed(1)}s</span></div>}
+                          {log.retry_count != null && <div>Retry Count: <span className="text-foreground">{log.retry_count}</span></div>}
+                          {log.platform_post_id && <div className="col-span-2">Post ID: <span className="font-mono text-foreground">{log.platform_post_id}</span></div>}
+                          {log.platform_post_id && (
+                            <div className="col-span-2">
+                              Platform URL: <a href={`https://facebook.com/${log.platform_post_id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                View Post ↗
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                        {log.platform_response && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Raw Response</summary>
+                            <pre className="mt-1 max-h-32 overflow-y-auto rounded bg-black/5 p-2 text-[10px] text-muted-foreground">
+                              {JSON.stringify(log.platform_response, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                        {log.error_message && (
+                          <div className="mt-1 rounded bg-destructive/10 p-1.5 text-red-400">
+                            {log.error_message}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

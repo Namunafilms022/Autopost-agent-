@@ -41,7 +41,7 @@ export async function publishToYouTube(
   accessToken: string,
   channelId: string,
   title?: string | null,
-): Promise<{ videoId: string }> {
+): Promise<{ videoId: string; videoUrl: string }> {
   if (!assetUrl) {
     throw new Error('YouTube requires a video asset to upload');
   }
@@ -68,45 +68,51 @@ export async function publishToYouTube(
 
   const metadata = JSON.stringify({ snippet, status });
 
-  const boundary = `yt_boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closing = `\r\n--${boundary}--\r\n`;
-
-  const metadataPart = `${delimiter}Content-Type: application/json\r\n\r\n${metadata}`;
-  const videoPart = `${delimiter}Content-Type: video/mp4\r\n\r\n`;
-
-  const encoder = new TextEncoder();
-  const metadataBytes = encoder.encode(metadataPart);
-  const videoBytes = new Uint8Array(videoBuffer);
-  const closingBytes = encoder.encode(closing);
-
-  const totalLength = metadataBytes.length + videoBytes.length + closingBytes.length;
-  const body = new Uint8Array(totalLength);
-  body.set(metadataBytes, 0);
-  body.set(videoBytes, metadataBytes.length);
-  body.set(closingBytes, metadataBytes.length + videoBytes.length);
-
-  const res = await fetch(
-    `${YOUTUBE_UPLOAD}/videos?part=snippet,status&uploadType=multipart`,
+  const resumableRes = await fetch(
+    `${YOUTUBE_UPLOAD}/videos?part=snippet,status&uploadType=resumable`,
     {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': `multipart/related; boundary="${boundary}"`,
-        'Content-Length': String(totalLength),
+        'Content-Type': 'application/json',
+        'X-Upload-Content-Length': String(videoBuffer.byteLength),
+        'X-Upload-Content-Type': 'video/mp4',
       },
-      body,
+      body: metadata,
     },
   );
 
-  const data = await res.json() as {
-    id?: string;
-    error?: { code?: number; message?: string; errors?: Array<{ message?: string; reason?: string }> };
-  };
-
-  if (!res.ok || !data.id) {
-    throw new Error(`YouTube upload failed: ${parseError(data)}`);
+  if (!resumableRes.ok) {
+    const errText = await resumableRes.text();
+    throw new Error(`YouTube resumable init failed (${resumableRes.status}): ${errText.slice(0, 200)}`);
   }
 
-  return { videoId: data.id };
+  const uploadUrl = resumableRes.headers.get('Location');
+  if (!uploadUrl) {
+    throw new Error('YouTube resumable init returned no Location header');
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Length': String(videoBuffer.byteLength),
+      'Content-Type': 'video/mp4',
+    },
+    body: videoBuffer,
+  });
+
+  const text = await uploadRes.text();
+  let data: Record<string, unknown>;
+  try { data = JSON.parse(text); } catch {
+    throw new Error(`YouTube upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
+  }
+
+  const d = data as { id?: string; error?: { code?: number; message?: string; errors?: Array<{ message?: string; reason?: string }> } };
+
+  if (!uploadRes.ok || !d.id) {
+    throw new Error(`YouTube upload failed: ${parseError(d)}`);
+  }
+
+  const videoId = d.id as string;
+  return { videoId, videoUrl: `https://www.youtube.com/watch?v=${videoId}` };
 }

@@ -35,7 +35,7 @@ export function ActiveTeamProvider({ children }: { children: React.ReactNode }) 
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       setActiveTeamIdState(stored);
-      loadRole(stored);
+      loadRole(stored).catch(() => {});
     }
     setLoading(false);
   }, []);

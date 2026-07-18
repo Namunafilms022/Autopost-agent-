@@ -37,42 +37,63 @@ export async function updateAsset(
   return data;
 }
 
+function getAccessToken(): Promise<string | null> {
+  return supabase.auth.getSession().then(({ data }) => data.session?.access_token ?? null);
+}
+
 export async function uploadAsset(
   file: File,
   metadata: { name: string; brand_id?: string | null; tags?: string[] },
 ): Promise<Asset> {
-  const ext = file.name.split('.').pop();
-  const path = `${crypto.randomUUID()}.${ext}`;
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error('Not authenticated');
 
-  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-  if (uploadError) throw uploadError;
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(BUCKET).getPublicUrl(path);
-
-  const type = file.type.startsWith('video') ? 'video' : 'image';
-
-  const { data, error: dbError } = await supabase
-    .from('assets')
-    .insert({
+  // Step 1: Get signed upload URL from server
+  const initRes = await fetch('/api/asset/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       name: metadata.name,
-      type,
-      mime_type: file.type,
-      size_bytes: file.size,
-      url: publicUrl,
+      mimeType: file.type,
+      fileSize: file.size,
+      accessToken,
       brand_id: metadata.brand_id ?? null,
       tags: metadata.tags ?? [],
-    })
-    .select()
-    .single();
+    }),
+  });
 
-  if (dbError) {
-    await supabase.storage.from(BUCKET).remove([path]);
-    throw dbError;
+  const initData = await initRes.json();
+  if (!initRes.ok) throw new Error(initData.error || 'Failed to initiate upload');
+
+  // Step 2: Upload file directly to Supabase Storage via signed URL (bypasses Vercel 4.5MB limit)
+  const uploadRes = await fetch(initData.uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': file.type },
+  });
+
+  if (!uploadRes.ok) {
+    throw new Error(`Failed to upload file to storage (${uploadRes.status})`);
   }
 
-  return data;
+  // Step 3: Confirm and create DB record
+  const confirmRes = await fetch('/api/asset/upload', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: initData.path,
+      name: initData.name,
+      mimeType: initData.mimeType,
+      fileSize: initData.fileSize,
+      accessToken,
+      brand_id: initData.brand_id,
+      tags: initData.tags,
+    }),
+  });
+
+  const confirmData = await confirmRes.json();
+  if (!confirmRes.ok) throw new Error(confirmData.error || 'Failed to confirm upload');
+  return confirmData.asset;
 }
 
 export function formatSize(bytes: number): string {

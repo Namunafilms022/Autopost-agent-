@@ -360,7 +360,7 @@ export default function AutomationPage() {
   const postsFailed = queueItems.filter((i) => i.status === 'failed').length;
   const todayStr = new Date().toISOString().slice(0, 10);
   const postsToday = queueItems.filter(
-    (i) => i.status === 'posted' && i.published_at?.startsWith(todayStr),
+    (i) => i.status === 'published' && i.published_at?.startsWith(todayStr),
   ).length;
 
   const statusBadge = (status: string) => {

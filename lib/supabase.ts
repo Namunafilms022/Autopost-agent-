@@ -13,6 +13,11 @@ function extractJwt(req: NextRequest): string | null {
   const token = req.nextUrl.searchParams.get('token');
   if (token) return token;
 
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice(7);
+  }
+
   const cookieToken = req.cookies.get(AUTH_COOKIE)?.value;
   if (!cookieToken) return null;
 
