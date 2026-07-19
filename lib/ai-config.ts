@@ -218,13 +218,13 @@ export async function callTextAI(
   const temperature = options?.temperature ?? 0.7;
   const lastMessage = messages[messages.length - 1]?.content ?? '';
 
-  // 1. Try Google AI Studio
-  const googleResult = await callGoogleAI(messages, maxTokens, temperature);
-  if (googleResult) return googleResult;
-
-  // 2. Try Groq (llama-3.3-70b)
+  // 1. Try Groq (llama-3.3-70b)
   const groqResult = await callGroq(messages, maxTokens, temperature);
   if (groqResult) return groqResult;
+
+  // 2. Try Google AI Studio
+  const googleResult = await callGoogleAI(messages, maxTokens, temperature);
+  if (googleResult) return googleResult;
 
   // 3. Try OpenRouter free models
   const openrouterResult = await callOpenRouterFree(messages, maxTokens, temperature);
