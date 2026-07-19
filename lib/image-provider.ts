@@ -21,7 +21,7 @@ export function registerImageProvider(name: string, factory: () => ImageProvider
 }
 
 export function getImageProvider(name?: string): ImageProvider {
-  const key = name ?? process.env.IMAGE_PROVIDER ?? 'pollinations';
+  const key = name ?? process.env.IMAGE_PROVIDER ?? 'google';
   const factory = providers.get(key);
   if (!factory) throw new Error(`Image provider "${key}" not found. Available: ${[...providers.keys()].join(', ')}`);
   return factory();
