@@ -4,7 +4,7 @@ import { registerImageProvider, type ImageInput, type ImageOutput, type ImagePro
 
 const POLLINATIONS_URL = 'https://image.pollinations.ai/prompt';
 
-const MODELS = ['flux', 'turbo', ''];
+const MODELS = ['', 'flux', 'turbo'];
 
 async function uploadBuffer(buffer: Buffer, contentType: string, token: string): Promise<string> {
   const supabase = createClient(
@@ -48,16 +48,17 @@ const pollinationsProvider: ImageProvider = {
         const res = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
 
-        if (!res.ok) {
-          const body = await res.text().catch(() => '');
+        const contentType = res.headers.get('content-type') || '';
+        const buffer = Buffer.from(await res.arrayBuffer());
+
+        if (!contentType.startsWith('image/') && buffer.length < 100) {
+          const body = buffer.toString('utf-8').slice(0, 500);
           lastError = new Error(`Pollinations error (${res.status}): ${body}`);
           continue;
         }
 
-        const contentType = res.headers.get('content-type') || 'image/jpeg';
-        const buffer = Buffer.from(await res.arrayBuffer());
-
-        const imageUrl = await uploadBuffer(buffer, contentType, input.supabaseToken);
+        const mimeType = contentType.startsWith('image/') ? contentType : 'image/jpeg';
+        const imageUrl = await uploadBuffer(buffer, mimeType, input.supabaseToken);
         const generationTime = Date.now() - startTime;
 
         return { imageUrl, generationTime, provider: 'pollinations' };
