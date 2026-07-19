@@ -1,6 +1,7 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const GOOGLE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const POLLINATIONS_TEXT = 'https://text.pollinations.ai';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 const FREE_MODELS = [
   'liquid/lfm-2.5-1.2b-instruct:free',
@@ -72,6 +73,59 @@ async function callGoogleAI(messages: { role: string; content: string }[], maxTo
     } catch (err) {
       console.warn('Google AI call failed:', err instanceof Error ? err.message : err);
       if (attempt === 2) return null;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  return null;
+}
+
+async function callGroq(messages: { role: string; content: string }[], maxTokens: number, temperature: number): Promise<string | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (res.status === 429) {
+        const wait = (attempt + 1) * 2000;
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.warn(`Groq error (${res.status}): ${body.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (content) return content;
+
+      return null;
+    } catch (err) {
+      console.warn('Groq call failed:', err instanceof Error ? err.message : err);
+      if (attempt === 1) return null;
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
@@ -168,7 +222,11 @@ export async function callTextAI(
   const googleResult = await callGoogleAI(messages, maxTokens, temperature);
   if (googleResult) return googleResult;
 
-  // 2. Try OpenRouter free models
+  // 2. Try Groq (llama-3.3-70b)
+  const groqResult = await callGroq(messages, maxTokens, temperature);
+  if (groqResult) return groqResult;
+
+  // 3. Try OpenRouter free models
   const openrouterResult = await callOpenRouterFree(messages, maxTokens, temperature);
   if (openrouterResult) return openrouterResult;
 
