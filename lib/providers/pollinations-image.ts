@@ -34,7 +34,7 @@ const pollinationsProvider: ImageProvider = {
   async generate(input: ImageInput): Promise<ImageOutput> {
     const startTime = Date.now();
 
-    const url = `${POLLINATIONS_URL}/${encodeURIComponent(input.prompt)}?width=1920&height=1080&nologo=true`;
+    const url = `${POLLINATIONS_URL}/${encodeURIComponent(input.prompt)}?model=flux`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
