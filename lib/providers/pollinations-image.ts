@@ -4,6 +4,8 @@ import { registerImageProvider, type ImageInput, type ImageOutput, type ImagePro
 
 const POLLINATIONS_URL = 'https://image.pollinations.ai/prompt';
 
+const MODELS = ['flux', 'turbo', ''];
+
 async function uploadBuffer(buffer: Buffer, contentType: string, token: string): Promise<string> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,27 +35,38 @@ const pollinationsProvider: ImageProvider = {
 
   async generate(input: ImageInput): Promise<ImageOutput> {
     const startTime = Date.now();
+    let lastError: Error | null = null;
 
-    const url = `${POLLINATIONS_URL}/${encodeURIComponent(input.prompt)}?model=flux`;
+    for (const model of MODELS) {
+      try {
+        const params = model ? `?model=${model}` : '';
+        const url = `${POLLINATIONS_URL}/${encodeURIComponent(input.prompt)}${params}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Pollinations error (${res.status}): ${body}`);
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          lastError = new Error(`Pollinations error (${res.status}): ${body}`);
+          continue;
+        }
+
+        const contentType = res.headers.get('content-type') || 'image/jpeg';
+        const buffer = Buffer.from(await res.arrayBuffer());
+
+        const imageUrl = await uploadBuffer(buffer, contentType, input.supabaseToken);
+        const generationTime = Date.now() - startTime;
+
+        return { imageUrl, generationTime, provider: 'pollinations' };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
     }
 
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    const imageUrl = await uploadBuffer(buffer, contentType, input.supabaseToken);
-    const generationTime = Date.now() - startTime;
-
-    return { imageUrl, generationTime, provider: 'pollinations' };
+    throw lastError || new Error('All Pollinations models failed');
   },
 };
 
